@@ -12,6 +12,7 @@ from app.api.routes_cajas import router as cajas_router
 from app.api.routes_viajes import router as viajes_router
 from app.db.base import Base
 from app.db.database import SessionLocal, engine
+from app.seeds.seed_evidencias import run_seed_evidencias
 from app.seeds.seed_viajes import run_seed_viajes
 import app.models  # noqa: F401
 
@@ -26,6 +27,7 @@ def on_startup():
     db: Session = SessionLocal()
     try:
         run_seed_viajes(db)
+        run_seed_evidencias(db)
     finally:
         db.close()
 

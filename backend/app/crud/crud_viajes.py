@@ -4,16 +4,22 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
 from app.models.models import (
+    ArchivoStorage,
     AsignacionViaje,
     Caja,
     CatalogoEstatusViaje,
     Cliente,
+    Documento,
+    Evidencia,
     HistorialEstatusViaje,
     Operador,
     Trailer,
+    TipoEvidencia,
     TransicionEstatusViaje,
     Viaje,
 )
+from app.core.config import settings
+from app.schemas.evidencia import ViajeEvidenciaCreate, ViajeEvidenciaUpdate
 from app.schemas.viaje import ViajeAsignacionCreate, ViajeCambioEstatus, ViajeCreate, ViajeUpdate
 
 
@@ -59,6 +65,147 @@ def trailer_exists(db: Session, trailer_id: int) -> bool:
 
 def caja_exists(db: Session, caja_id: int) -> bool:
     return db.query(Caja).filter(Caja.id_caja == caja_id).first() is not None
+
+
+def tipo_evidencia_exists(db: Session, tipo_evidencia_id: int) -> bool:
+    return (
+        db.query(TipoEvidencia)
+        .filter(TipoEvidencia.id_tipo_evidencia == tipo_evidencia_id)
+        .first()
+        is not None
+    )
+
+
+def archivo_storage_exists(db: Session, archivo_id: int) -> bool:
+    return (
+        db.query(ArchivoStorage)
+        .filter(ArchivoStorage.id_archivo == archivo_id)
+        .first()
+        is not None
+    )
+
+
+def get_tipos_evidencia(db: Session) -> list[TipoEvidencia]:
+    return (
+        db.query(TipoEvidencia)
+        .order_by(TipoEvidencia.id_tipo_evidencia.asc())
+        .all()
+    )
+
+
+def get_archivos_storage_prueba(db: Session) -> list[ArchivoStorage]:
+    return (
+        db.query(ArchivoStorage)
+        .filter(ArchivoStorage.bucket == "mock-viajes")
+        .order_by(ArchivoStorage.id_archivo.asc())
+        .all()
+    )
+
+
+def get_evidencia_by_id(evidencia_id: int, db: Session) -> Evidencia | None:
+    return db.query(Evidencia).filter(Evidencia.id_evidencia == evidencia_id).first()
+
+
+def get_evidencia_by_id_and_viaje(
+    db: Session,
+    evidencia_id: int,
+    viaje_id: int,
+) -> Evidencia | None:
+    return (
+        db.query(Evidencia)
+        .filter(
+            Evidencia.id_evidencia == evidencia_id,
+            Evidencia.id_viaje == viaje_id,
+        )
+        .first()
+    )
+
+
+def get_evidencias_by_viaje(db: Session, viaje_id: int) -> list[Evidencia]:
+    return (
+        db.query(Evidencia)
+        .filter(Evidencia.id_viaje == viaje_id)
+        .order_by(Evidencia.id_evidencia.desc())
+        .all()
+    )
+
+
+def create_evidencia_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    evidencia_in: ViajeEvidenciaCreate,
+) -> Evidencia:
+    if not tipo_evidencia_exists(db, evidencia_in.id_tipo_evidencia):
+        raise ValueError("El tipo de evidencia especificado no existe")
+
+    if not archivo_storage_exists(db, evidencia_in.id_archivo):
+        raise ValueError("El archivo especificado no existe")
+
+    if evidencia_in.id_operador is not None and not operador_exists(db, evidencia_in.id_operador):
+        raise ValueError("El operador especificado no existe")
+
+    evidencia_data = {
+        "id_viaje": db_viaje.id_viaje,
+        "id_tipo_evidencia": evidencia_in.id_tipo_evidencia,
+        "id_operador": evidencia_in.id_operador,
+        "id_archivo": evidencia_in.id_archivo,
+        "comentario": evidencia_in.comentario,
+        "latitud": evidencia_in.latitud,
+        "longitud": evidencia_in.longitud,
+    }
+
+    if evidencia_in.fecha_captura is not None:
+        evidencia_data["fecha_captura"] = evidencia_in.fecha_captura
+
+    db_evidencia = Evidencia(
+        **evidencia_data,
+    )
+    db.add(db_evidencia)
+    db.commit()
+    db.refresh(db_evidencia)
+    return db_evidencia
+
+
+def update_evidencia_viaje(
+    db: Session,
+    db_evidencia: Evidencia,
+    evidencia_in: ViajeEvidenciaUpdate,
+) -> Evidencia:
+    update_data = evidencia_in.model_dump(exclude_unset=True)
+
+    if "id_tipo_evidencia" in update_data and update_data["id_tipo_evidencia"] is None:
+        raise ValueError("El tipo de evidencia no puede ser nulo")
+
+    if "id_archivo" in update_data and update_data["id_archivo"] is None:
+        raise ValueError("El archivo de la evidencia no puede ser nulo")
+
+    if "fecha_captura" in update_data and update_data["fecha_captura"] is None:
+        raise ValueError("La fecha de captura no puede ser nula")
+
+    if "id_tipo_evidencia" in update_data and not tipo_evidencia_exists(db, update_data["id_tipo_evidencia"]):
+        raise ValueError("El tipo de evidencia especificado no existe")
+
+    if "id_archivo" in update_data and not archivo_storage_exists(db, update_data["id_archivo"]):
+        raise ValueError("El archivo especificado no existe")
+
+    if (
+        "id_operador" in update_data
+        and update_data["id_operador"] is not None
+        and not operador_exists(db, update_data["id_operador"])
+    ):
+        raise ValueError("El operador especificado no existe")
+
+    for field, value in update_data.items():
+        setattr(db_evidencia, field, value)
+
+    db.commit()
+    db.refresh(db_evidencia)
+    return db_evidencia
+
+
+def delete_evidencia_viaje(db: Session, db_evidencia: Evidencia) -> None:
+    db.delete(db_evidencia)
+    db.commit()
 
 
 def get_asignacion_activa_by_viaje(db: Session, viaje_id: int) -> AsignacionViaje | None:
@@ -109,6 +256,69 @@ def transicion_permitida(
         )
         .first()
     )
+
+
+def _validar_requisitos_evidencia_transicion(
+    db: Session,
+    db_viaje: Viaje,
+    transicion: TransicionEstatusViaje,
+    estatus_destino: CatalogoEstatusViaje,
+) -> None:
+    if not transicion.requiere_evidencia:
+        return
+
+    evidencias_query = db.query(Evidencia).filter(
+        Evidencia.id_viaje == db_viaje.id_viaje,
+        Evidencia.id_archivo.isnot(None),
+    )
+
+    if estatus_destino.clave == "INICIADO":
+        if evidencias_query.first() is None:
+            raise ValueError(
+                "La transición a INICIADO requiere al menos una evidencia asociada al viaje con id_archivo válido"
+            )
+    elif estatus_destino.clave == "FINALIZADO":
+        evidencia_cierre = evidencias_query.first()
+        if evidencia_cierre is None:
+            raise ValueError(
+                "La transición a FINALIZADO requiere al menos una evidencia asociada al viaje"
+            )
+        # Punto de extensión: aquí podrá diferenciarse evidencia de cierre por tipo.
+    elif evidencias_query.first() is None:
+        raise ValueError(
+            f"La transición a {estatus_destino.clave} requiere al menos una evidencia asociada al viaje"
+        )
+
+    if settings.strict_evidence_validation:
+        _validar_documentos_transicion_strict(db, db_viaje, estatus_destino)
+
+
+def _validar_documentos_transicion_strict(
+    db: Session,
+    db_viaje: Viaje,
+    estatus_destino: CatalogoEstatusViaje,
+) -> None:
+    documentos_viaje = (
+        db.query(Documento)
+        .filter(Documento.id_viaje == db_viaje.id_viaje)
+        .all()
+    )
+
+    if not documentos_viaje:
+        # Compatibilidad: dejamos preparado el punto de extensión documental sin
+        # bloquear transiciones mientras la carga documental completa aún no exista por API.
+        return
+
+    documentos_no_vigentes = [
+        documento.id_documento
+        for documento in documentos_viaje
+        if documento.estatus != "VIGENTE"
+    ]
+
+    if documentos_no_vigentes:
+        raise ValueError(
+            f"La transición a {estatus_destino.clave} encontró documentos no vigentes asociados al viaje"
+        )
 
 
 def get_operadores_disponibles(db: Session) -> list[Operador]:
@@ -378,6 +588,13 @@ def cambiar_estatus_viaje(
     if transicion.requiere_comentario and not cambio_in.comentario:
         raise ValueError("Esta transición requiere comentario")
 
+    _validar_requisitos_evidencia_transicion(
+        db,
+        db_viaje,
+        transicion,
+        estatus_destino,
+    )
+
     asignacion_activa = get_asignacion_activa_by_viaje(db, db_viaje.id_viaje)
 
     if estatus_destino.clave in {"ASIGNADO", "CARGANDO", "INICIADO"} and not asignacion_activa:
@@ -424,7 +641,6 @@ def cambiar_estatus_viaje(
     db.commit()
     db.refresh(db_viaje)
     return db_viaje
-
 def get_transiciones_disponibles_by_viaje(
     db: Session,
     db_viaje: Viaje,

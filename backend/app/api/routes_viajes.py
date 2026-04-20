@@ -2,17 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.crud.crud_viajes import (
+    archivo_storage_exists,
     caja_exists,
     cancelar_viaje,
     cambiar_estatus_viaje,
     cliente_exists,
+    create_evidencia_viaje,
     create_asignacion_viaje,
     create_viaje,
+    delete_evidencia_viaje,
     finalizar_viaje,
+    get_archivos_storage_prueba,
     get_asignaciones_by_viaje,
     get_cajas_disponibles,
+    get_evidencia_by_id_and_viaje,
+    get_evidencias_by_viaje,
     get_historial_by_viaje,
     get_operadores_disponibles,
+    get_tipos_evidencia,
     get_trailers_disponibles,
     get_transiciones_disponibles_by_viaje,
     get_viaje_by_folio,
@@ -25,9 +32,18 @@ from app.crud.crud_viajes import (
     poner_standby_viaje,
     reasignar_viaje,
     trailer_exists,
+    tipo_evidencia_exists,
+    update_evidencia_viaje,
     update_viaje,
 )
 from app.db.deps import get_db
+from app.schemas.evidencia import (
+    ArchivoStoragePruebaResponse,
+    TipoEvidenciaResponse,
+    ViajeEvidenciaCreate,
+    ViajeEvidenciaResponse,
+    ViajeEvidenciaUpdate,
+)
 from app.schemas.viaje import (
     CajaDisponibleResponse,
     HistorialEstatusViajeResponse,
@@ -82,6 +98,22 @@ def list_viajes(
     db: Session = Depends(get_db),
 ):
     return get_viajes(db, skip=skip, limit=limit)
+
+
+@router.get(
+    "/catalogos/tipos-evidencia",
+    response_model=list[TipoEvidenciaResponse],
+)
+def list_tipos_evidencia(db: Session = Depends(get_db)):
+    return get_tipos_evidencia(db)
+
+
+@router.get(
+    "/archivos-prueba",
+    response_model=list[ArchivoStoragePruebaResponse],
+)
+def list_archivos_prueba(db: Session = Depends(get_db)):
+    return get_archivos_storage_prueba(db)
 
 
 @router.get("/{viaje_id}", response_model=ViajeResponse)
@@ -197,6 +229,164 @@ def list_historial_estatus_by_viaje(viaje_id: int, db: Session = Depends(get_db)
         )
 
     return get_historial_by_viaje(db, viaje_id)
+
+
+@router.post(
+    "/{viaje_id}/evidencias",
+    response_model=ViajeEvidenciaResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_new_evidencia_viaje(
+    viaje_id: int,
+    evidencia_in: ViajeEvidenciaCreate,
+    db: Session = Depends(get_db),
+):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    if not tipo_evidencia_exists(db, evidencia_in.id_tipo_evidencia):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El tipo de evidencia especificado no existe",
+        )
+
+    if not archivo_storage_exists(db, evidencia_in.id_archivo):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo especificado no existe",
+        )
+
+    if evidencia_in.id_operador is not None and not operador_exists(db, evidencia_in.id_operador):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El operador especificado no existe",
+        )
+
+    try:
+        return create_evidencia_viaje(db, db_viaje, evidencia_in)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/{viaje_id}/evidencias",
+    response_model=list[ViajeEvidenciaResponse],
+)
+def list_evidencias_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    return get_evidencias_by_viaje(db, viaje_id)
+
+
+@router.get(
+    "/{viaje_id}/evidencias/{evidencia_id}",
+    response_model=ViajeEvidenciaResponse,
+)
+def get_evidencia(viaje_id: int, evidencia_id: int, db: Session = Depends(get_db)):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    db_evidencia = get_evidencia_by_id_and_viaje(db, evidencia_id, viaje_id)
+    if not db_evidencia:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidencia no encontrada para el viaje especificado",
+        )
+
+    return db_evidencia
+
+
+@router.put(
+    "/{viaje_id}/evidencias/{evidencia_id}",
+    response_model=ViajeEvidenciaResponse,
+)
+def update_evidencia(
+    viaje_id: int,
+    evidencia_id: int,
+    evidencia_in: ViajeEvidenciaUpdate,
+    db: Session = Depends(get_db),
+):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    db_evidencia = get_evidencia_by_id_and_viaje(db, evidencia_id, viaje_id)
+    if not db_evidencia:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidencia no encontrada para el viaje especificado",
+        )
+
+    if (
+        evidencia_in.id_tipo_evidencia is not None
+        and not tipo_evidencia_exists(db, evidencia_in.id_tipo_evidencia)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El tipo de evidencia especificado no existe",
+        )
+
+    if evidencia_in.id_archivo is not None and not archivo_storage_exists(db, evidencia_in.id_archivo):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo especificado no existe",
+        )
+
+    if evidencia_in.id_operador is not None and not operador_exists(db, evidencia_in.id_operador):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El operador especificado no existe",
+        )
+
+    try:
+        return update_evidencia_viaje(db, db_evidencia, evidencia_in)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.delete(
+    "/{viaje_id}/evidencias/{evidencia_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_evidencia(viaje_id: int, evidencia_id: int, db: Session = Depends(get_db)):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    db_evidencia = get_evidencia_by_id_and_viaje(db, evidencia_id, viaje_id)
+    if not db_evidencia:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidencia no encontrada para el viaje especificado",
+        )
+
+    delete_evidencia_viaje(db, db_evidencia)
+    return None
 
 
 @router.post("/{viaje_id}/cambiar-estatus", response_model=ViajeResponse)

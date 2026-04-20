@@ -129,6 +129,11 @@ Se calcula dinámicamente (NO se guarda en tablas):
 ### Workflow
 
 * `POST /viajes/{id}/asignar`
+* `POST /viajes/{id}/evidencias`
+* `GET /viajes/{id}/evidencias`
+* `GET /viajes/{id}/evidencias/{evidencia_id}`
+* `PUT /viajes/{id}/evidencias/{evidencia_id}`
+* `DELETE /viajes/{id}/evidencias/{evidencia_id}`
 * `POST /viajes/{id}/iniciar-carga`
 * `POST /viajes/{id}/iniciar-viaje`
 * `POST /viajes/{id}/marcar-retraso`
@@ -144,16 +149,38 @@ Se calcula dinámicamente (NO se guarda en tablas):
 1. Crear viaje
 2. Asignar operador + tráiler + caja
 3. Iniciar carga
-4. Iniciar viaje
-5. Poner en standby
-6. Reasignar
-7. Finalizar
+4. Cargar al menos una evidencia del viaje con `id_archivo` válido
+5. Iniciar viaje
+6. Poner en standby
+7. Reasignar
+8. Finalizar
+
+### Validación de evidencias
+
+* La validación quedó centralizada en el cambio de estatus del backend
+* Se dispara únicamente cuando la transición tiene `requiere_evidencia = true`
+* Para `INICIADO` se exige al menos una evidencia asociada al viaje con `id_archivo` válido
+* Para `FINALIZADO` se exige al menos una evidencia asociada al viaje
+* Existe `strict_evidence_validation=false` para dejar preparada validación documental más estricta sin romper compatibilidad
+* El CRUD base de evidencias se expone como submódulo de viajes
+* Se incluyen seeds de `tipos_evidencia` y `archivos_storage` de prueba para usar Swagger sin integración real con R2
+
+### Pruebas manuales sugeridas en Swagger
+
+1. Crear un viaje con `POST /viajes`
+2. Asignar recursos con `POST /viajes/{id}/asignar`
+3. Consultar `GET /viajes/catalogos/tipos-evidencia` y `GET /viajes/archivos-prueba`
+4. Crear evidencia con `POST /viajes/{id}/evidencias`
+5. Mover el viaje a `CARGANDO` con `POST /viajes/{id}/iniciar-carga`
+6. Intentar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
+7. Consultar o editar la evidencia con `GET/PUT /viajes/{id}/evidencias/{evidencia_id}`
+8. Intentar `DELETE /viajes/{id}/evidencias/{evidencia_id}` y confirmar que el viaje vuelve a bloquearse si se queda sin evidencias
 
 ---
 
 ## ⚠️ Pendientes
 
-* Validación de evidencias obligatorias
+* Diferenciar evidencia de inicio vs evidencia de cierre
 * Vistas enriquecidas de viajes
 * Filtros avanzados
 * Integración completa con almacenamiento (R2)

@@ -172,7 +172,30 @@ Antes de permitir:
 Debe existir:
 
 * evidencia cargada
-* documentos válidos
+* base preparada para validación documental más estricta
+
+### Estado implementado
+
+La validación ya quedó centralizada en:
+
+```
+cambiar_estatus_viaje()
+```
+
+Reglas activas:
+
+* Se dispara únicamente cuando `transicion.requiere_evidencia = true`
+* Para `INICIADO` exige al menos una evidencia asociada al viaje con `id_archivo` válido
+* Para `FINALIZADO` exige al menos una evidencia asociada al viaje
+* El código quedó preparado para diferenciar evidencia de cierre más adelante
+
+Compatibilidad:
+
+* Se agregó `strict_evidence_validation = false` en configuración
+* Si se activa en `true`, se deja preparado el punto de extensión para validación documental
+* Si todavía no existen documentos cargados por API, no se rompe el flujo actual
+* Ya existe un CRUD base de evidencias anidado bajo viajes para desbloquear pruebas operativas
+* Se sembraron `tipos_evidencia` y `archivos_storage` de prueba para usar Swagger sin integración real con R2
 
 ---
 
@@ -218,7 +241,20 @@ GET /catalogos/estatus
 
 Implementar:
 
-👉 Validación obligatoria de evidencias para transición a INICIADO y FINALIZADO
+👉 Refinar clasificación de evidencias de inicio/cierre y sustituir archivos mock por integración real de almacenamiento
+
+---
+
+## 🧪 Pruebas manuales recomendadas en Swagger
+
+1. Crear viaje
+2. Asignar operador + tráiler + caja
+3. Consultar `GET /viajes/catalogos/tipos-evidencia`
+4. Consultar `GET /viajes/archivos-prueba`
+5. Crear evidencia con `POST /viajes/{id}/evidencias`
+6. Ejecutar `POST /viajes/{id}/iniciar-carga`
+7. Ejecutar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
+8. Ejecutar `POST /viajes/{id}/finalizar` con evidencia válida y confirmar éxito
 
 ---
 
