@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16
+    container_name: logistica_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ../backend
+    container_name: logistica_api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PYTHONPATH: /app
+    ports:
+      - "8080:8000"
+    depends_on:
+      - db
+    volumes:
+      - ../backend:/app
+    env_file:
+      - .env
+
+volumes:
+  pgdata:
