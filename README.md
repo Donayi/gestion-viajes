@@ -134,6 +134,17 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * `GET /viajes/{id}/evidencias/{evidencia_id}`
 * `PUT /viajes/{id}/evidencias/{evidencia_id}`
 * `DELETE /viajes/{id}/evidencias/{evidencia_id}`
+* `GET /viajes/catalogos/tipos-documento`
+* `POST /viajes/{id}/documentos`
+* `GET /viajes/{id}/documentos`
+* `POST /viajes/{id}/operador-actual/documentos`
+* `GET /viajes/{id}/operador-actual/documentos`
+* `POST /viajes/{id}/trailer-actual/documentos`
+* `GET /viajes/{id}/trailer-actual/documentos`
+* `POST /viajes/{id}/caja-actual/documentos`
+* `GET /viajes/{id}/caja-actual/documentos`
+* `GET /viajes/{id}/asignaciones/enriched`
+* `GET /viajes/{id}/historial-estatus/enriched`
 * `POST /viajes/{id}/iniciar-carga`
 * `POST /viajes/{id}/iniciar-viaje`
 * `POST /viajes/{id}/marcar-retraso`
@@ -161,9 +172,20 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * Se dispara únicamente cuando la transición tiene `requiere_evidencia = true`
 * Para `INICIADO` se exige al menos una evidencia asociada al viaje con `id_archivo` válido
 * Para `FINALIZADO` se exige al menos una evidencia asociada al viaje
-* Existe `strict_evidence_validation=false` para dejar preparada validación documental más estricta sin romper compatibilidad
+* `strict_evidence_validation=false` desactiva la validación documental estricta
+* `strict_evidence_validation=true` activa validación documental estricta centralizada en backend
+* Para `INICIADO` con validación estricta activa:
+  * operador actual con al menos un documento vigente
+  * tráiler actual con al menos un documento vigente
+  * caja actual con al menos un documento vigente, si existe
+* Para `FINALIZADO` con validación estricta activa:
+  * mantiene validación de evidencia
+  * valida documentos solo de los recursos actuales aún ligados al viaje, sin bloquear por recursos ausentes
 * El CRUD base de evidencias se expone como submódulo de viajes
+* Existe un CRUD mínimo de documentos para asociar documentos al viaje y a los recursos actuales del viaje
+* Se incluyen seeds de `tipos_documento` para pruebas operativas mínimas
 * Se incluyen seeds de `tipos_evidencia` y `archivos_storage` de prueba para usar Swagger sin integración real con R2
+* Existen vistas enriquecidas de lectura para viajes, historial-estatus y asignaciones orientadas a frontend
 
 ### Pruebas manuales sugeridas en Swagger
 
@@ -175,6 +197,14 @@ Se calcula dinámicamente (NO se guarda en tablas):
 6. Intentar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
 7. Consultar o editar la evidencia con `GET/PUT /viajes/{id}/evidencias/{evidencia_id}`
 8. Intentar `DELETE /viajes/{id}/evidencias/{evidencia_id}` y confirmar que el viaje vuelve a bloquearse si se queda sin evidencias
+9. Consultar `GET /viajes/{id}/asignaciones/enriched` y validar operador/tráiler/caja anidados
+10. Consultar `GET /viajes/{id}/historial-estatus/enriched` y validar estatus/usuario anidados
+11. Con `strict_evidence_validation=true`, intentar `POST /viajes/{id}/iniciar-viaje` sin documentos vigentes del operador o tráiler y confirmar error claro por entidad
+12. Consultar `GET /viajes/catalogos/tipos-documento` y `GET /viajes/archivos-prueba`
+13. Crear documentos válidos con `POST /viajes/{id}/operador-actual/documentos` y `POST /viajes/{id}/trailer-actual/documentos`
+14. Si el viaje tiene caja, crear documento válido con `POST /viajes/{id}/caja-actual/documentos`
+15. Reintentar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
+16. Con `strict_evidence_validation=true`, probar `POST /viajes/{id}/finalizar` y confirmar que solo valida documentos de recursos actuales presentes
 
 ---
 

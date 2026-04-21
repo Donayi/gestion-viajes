@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 
 from app.models.models import (
@@ -14,11 +14,14 @@ from app.models.models import (
     HistorialEstatusViaje,
     Operador,
     Trailer,
+    TipoDocumento,
     TipoEvidencia,
     TransicionEstatusViaje,
+    Usuario,
     Viaje,
 )
 from app.core.config import settings
+from app.schemas.documento import DocumentoCreate
 from app.schemas.evidencia import ViajeEvidenciaCreate, ViajeEvidenciaUpdate
 from app.schemas.viaje import ViajeAsignacionCreate, ViajeCambioEstatus, ViajeCreate, ViajeUpdate
 
@@ -51,6 +54,39 @@ def get_viajes(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
     return db.query(Viaje).offset(skip).limit(limit).all()
 
 
+def get_viajes_enriched(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
+    return (
+        db.query(Viaje)
+        .options(
+            joinedload(Viaje.cliente),
+            joinedload(Viaje.estatus_actual),
+            joinedload(Viaje.operador_actual),
+            joinedload(Viaje.trailer_actual),
+            joinedload(Viaje.caja_actual),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_viaje_detail_by_id(db: Session, viaje_id: int) -> Viaje | None:
+    return (
+        db.query(Viaje)
+        .options(
+            joinedload(Viaje.cliente),
+            joinedload(Viaje.estatus_actual),
+            joinedload(Viaje.operador_actual),
+            joinedload(Viaje.trailer_actual),
+            joinedload(Viaje.caja_actual),
+            joinedload(Viaje.usuario_creador),
+            joinedload(Viaje.usuario_actualizador),
+        )
+        .filter(Viaje.id_viaje == viaje_id)
+        .first()
+    )
+
+
 def cliente_exists(db: Session, cliente_id: int) -> bool:
     return db.query(Cliente).filter(Cliente.id_cliente == cliente_id).first() is not None
 
@@ -67,6 +103,10 @@ def caja_exists(db: Session, caja_id: int) -> bool:
     return db.query(Caja).filter(Caja.id_caja == caja_id).first() is not None
 
 
+def usuario_exists(db: Session, usuario_id: int) -> bool:
+    return db.query(Usuario).filter(Usuario.id_usuario == usuario_id).first() is not None
+
+
 def tipo_evidencia_exists(db: Session, tipo_evidencia_id: int) -> bool:
     return (
         db.query(TipoEvidencia)
@@ -74,6 +114,18 @@ def tipo_evidencia_exists(db: Session, tipo_evidencia_id: int) -> bool:
         .first()
         is not None
     )
+
+
+def get_tipo_documento_by_id(db: Session, tipo_documento_id: int) -> TipoDocumento | None:
+    return (
+        db.query(TipoDocumento)
+        .filter(TipoDocumento.id_tipo_documento == tipo_documento_id)
+        .first()
+    )
+
+
+def tipo_documento_exists(db: Session, tipo_documento_id: int) -> bool:
+    return get_tipo_documento_by_id(db, tipo_documento_id) is not None
 
 
 def archivo_storage_exists(db: Session, archivo_id: int) -> bool:
@@ -89,6 +141,14 @@ def get_tipos_evidencia(db: Session) -> list[TipoEvidencia]:
     return (
         db.query(TipoEvidencia)
         .order_by(TipoEvidencia.id_tipo_evidencia.asc())
+        .all()
+    )
+
+
+def get_tipos_documento(db: Session) -> list[TipoDocumento]:
+    return (
+        db.query(TipoDocumento)
+        .order_by(TipoDocumento.id_tipo_documento.asc())
         .all()
     )
 
@@ -128,6 +188,163 @@ def get_evidencias_by_viaje(db: Session, viaje_id: int) -> list[Evidencia]:
         .order_by(Evidencia.id_evidencia.desc())
         .all()
     )
+
+
+def get_documentos_by_viaje(db: Session, viaje_id: int) -> list[Documento]:
+    return (
+        db.query(Documento)
+        .filter(Documento.id_viaje == viaje_id)
+        .order_by(Documento.id_documento.desc())
+        .all()
+    )
+
+
+def get_documentos_by_operador(db: Session, operador_id: int) -> list[Documento]:
+    return (
+        db.query(Documento)
+        .filter(Documento.id_operador == operador_id)
+        .order_by(Documento.id_documento.desc())
+        .all()
+    )
+
+
+def get_documentos_by_trailer(db: Session, trailer_id: int) -> list[Documento]:
+    return (
+        db.query(Documento)
+        .filter(Documento.id_trailer == trailer_id)
+        .order_by(Documento.id_documento.desc())
+        .all()
+    )
+
+
+def get_documentos_by_caja(db: Session, caja_id: int) -> list[Documento]:
+    return (
+        db.query(Documento)
+        .filter(Documento.id_caja == caja_id)
+        .order_by(Documento.id_documento.desc())
+        .all()
+    )
+
+
+def _validar_datos_documento_create(
+    db: Session,
+    documento_in: DocumentoCreate,
+    aplica_a: str,
+) -> TipoDocumento:
+    tipo_documento = get_tipo_documento_by_id(db, documento_in.id_tipo_documento)
+    if not tipo_documento:
+        raise ValueError("El tipo de documento especificado no existe")
+
+    if not archivo_storage_exists(db, documento_in.id_archivo):
+        raise ValueError("El archivo especificado no existe")
+
+    if documento_in.subido_por is not None and not usuario_exists(db, documento_in.subido_por):
+        raise ValueError("El usuario que sube el documento no existe")
+
+    if tipo_documento.aplica_a != aplica_a:
+        raise ValueError(f"El tipo de documento no aplica a {aplica_a}")
+
+    return tipo_documento
+
+
+def create_documento_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    documento_in: DocumentoCreate,
+) -> Documento:
+    _validar_datos_documento_create(db, documento_in, "VIAJE")
+
+    db_documento = Documento(
+        id_tipo_documento=documento_in.id_tipo_documento,
+        id_viaje=db_viaje.id_viaje,
+        id_archivo=documento_in.id_archivo,
+        fecha_emision=documento_in.fecha_emision,
+        fecha_expiracion=documento_in.fecha_expiracion,
+        estatus=documento_in.estatus,
+        subido_por=documento_in.subido_por,
+    )
+    db.add(db_documento)
+    db.commit()
+    db.refresh(db_documento)
+    return db_documento
+
+
+def create_documento_operador_actual_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    documento_in: DocumentoCreate,
+) -> Documento:
+    operador_actual = db_viaje.operador_actual
+    if not operador_actual:
+        raise ValueError("El viaje no tiene operador actual para asociar documentos")
+
+    _validar_datos_documento_create(db, documento_in, "OPERADOR")
+
+    db_documento = Documento(
+        id_tipo_documento=documento_in.id_tipo_documento,
+        id_operador=operador_actual.id_operador,
+        id_archivo=documento_in.id_archivo,
+        fecha_emision=documento_in.fecha_emision,
+        fecha_expiracion=documento_in.fecha_expiracion,
+        estatus=documento_in.estatus,
+        subido_por=documento_in.subido_por,
+    )
+    db.add(db_documento)
+    db.commit()
+    db.refresh(db_documento)
+    return db_documento
+
+
+def create_documento_trailer_actual_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    documento_in: DocumentoCreate,
+) -> Documento:
+    trailer_actual = db_viaje.trailer_actual
+    if not trailer_actual:
+        raise ValueError("El viaje no tiene tráiler actual para asociar documentos")
+
+    _validar_datos_documento_create(db, documento_in, "TRAILER")
+
+    db_documento = Documento(
+        id_tipo_documento=documento_in.id_tipo_documento,
+        id_trailer=trailer_actual.id_trailer,
+        id_archivo=documento_in.id_archivo,
+        fecha_emision=documento_in.fecha_emision,
+        fecha_expiracion=documento_in.fecha_expiracion,
+        estatus=documento_in.estatus,
+        subido_por=documento_in.subido_por,
+    )
+    db.add(db_documento)
+    db.commit()
+    db.refresh(db_documento)
+    return db_documento
+
+
+def create_documento_caja_actual_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    documento_in: DocumentoCreate,
+) -> Documento:
+    caja_actual = db_viaje.caja_actual
+    if not caja_actual:
+        raise ValueError("El viaje no tiene caja actual para asociar documentos")
+
+    _validar_datos_documento_create(db, documento_in, "CAJA")
+
+    db_documento = Documento(
+        id_tipo_documento=documento_in.id_tipo_documento,
+        id_caja=caja_actual.id_caja,
+        id_archivo=documento_in.id_archivo,
+        fecha_emision=documento_in.fecha_emision,
+        fecha_expiracion=documento_in.fecha_expiracion,
+        estatus=documento_in.estatus,
+        subido_por=documento_in.subido_por,
+    )
+    db.add(db_documento)
+    db.commit()
+    db.refresh(db_documento)
+    return db_documento
 
 
 def create_evidencia_viaje(
@@ -228,9 +445,37 @@ def get_asignaciones_by_viaje(db: Session, viaje_id: int) -> list[AsignacionViaj
     )
 
 
+def get_asignaciones_enriched_by_viaje(db: Session, viaje_id: int) -> list[AsignacionViaje]:
+    return (
+        db.query(AsignacionViaje)
+        .options(
+            joinedload(AsignacionViaje.operador),
+            joinedload(AsignacionViaje.trailer),
+            joinedload(AsignacionViaje.caja),
+            joinedload(AsignacionViaje.usuario_creador),
+        )
+        .filter(AsignacionViaje.id_viaje == viaje_id)
+        .order_by(AsignacionViaje.id_asignacion.desc())
+        .all()
+    )
+
+
 def get_historial_by_viaje(db: Session, viaje_id: int) -> list[HistorialEstatusViaje]:
     return (
         db.query(HistorialEstatusViaje)
+        .filter(HistorialEstatusViaje.id_viaje == viaje_id)
+        .order_by(HistorialEstatusViaje.id_historial.asc())
+        .all()
+    )
+
+
+def get_historial_enriched_by_viaje(db: Session, viaje_id: int) -> list[HistorialEstatusViaje]:
+    return (
+        db.query(HistorialEstatusViaje)
+        .options(
+            joinedload(HistorialEstatusViaje.estatus),
+            joinedload(HistorialEstatusViaje.usuario_cambio),
+        )
         .filter(HistorialEstatusViaje.id_viaje == viaje_id)
         .order_by(HistorialEstatusViaje.id_historial.asc())
         .all()
@@ -298,27 +543,136 @@ def _validar_documentos_transicion_strict(
     db_viaje: Viaje,
     estatus_destino: CatalogoEstatusViaje,
 ) -> None:
-    documentos_viaje = (
-        db.query(Documento)
-        .filter(Documento.id_viaje == db_viaje.id_viaje)
-        .all()
-    )
+    entidades = _obtener_entidades_documentales_viaje(db_viaje)
+    requisitos = _obtener_requisitos_documentales_por_estatus(estatus_destino.clave, entidades)
 
-    if not documentos_viaje:
-        # Compatibilidad: dejamos preparado el punto de extensión documental sin
-        # bloquear transiciones mientras la carga documental completa aún no exista por API.
+    for requisito in requisitos:
+        _validar_requisito_documental(db, requisito, entidades, estatus_destino.clave)
+
+
+def _obtener_entidades_documentales_viaje(db_viaje: Viaje) -> dict[str, object | None]:
+    return {
+        "VIAJE": db_viaje,
+        "OPERADOR": db_viaje.operador_actual,
+        "TRAILER": db_viaje.trailer_actual,
+        "CAJA": db_viaje.caja_actual,
+    }
+
+
+def _obtener_requisitos_documentales_por_estatus(
+    clave_estatus_destino: str,
+    entidades: dict[str, object | None],
+) -> list[dict[str, object]]:
+    if clave_estatus_destino == "INICIADO":
+        requisitos = [
+            {"aplica_a": "OPERADOR", "obligatorio": True},
+            {"aplica_a": "TRAILER", "obligatorio": True},
+        ]
+        if entidades.get("CAJA") is not None:
+            requisitos.append({"aplica_a": "CAJA", "obligatorio": True})
+        return requisitos
+
+    if clave_estatus_destino == "FINALIZADO":
+        requisitos = []
+        if entidades.get("OPERADOR") is not None:
+            requisitos.append({"aplica_a": "OPERADOR", "obligatorio": False})
+        if entidades.get("TRAILER") is not None:
+            requisitos.append({"aplica_a": "TRAILER", "obligatorio": False})
+        if entidades.get("CAJA") is not None:
+            requisitos.append({"aplica_a": "CAJA", "obligatorio": False})
+        return requisitos
+
+    return []
+
+
+def _obtener_documentos_por_entidad(
+    db: Session,
+    aplica_a: str,
+    entidad_id: int,
+) -> list[Documento]:
+    query = db.query(Documento).options(joinedload(Documento.tipo_documento))
+
+    if aplica_a == "VIAJE":
+        query = query.filter(Documento.id_viaje == entidad_id)
+    elif aplica_a == "OPERADOR":
+        query = query.filter(Documento.id_operador == entidad_id)
+    elif aplica_a == "TRAILER":
+        query = query.filter(Documento.id_trailer == entidad_id)
+    elif aplica_a == "CAJA":
+        query = query.filter(Documento.id_caja == entidad_id)
+    else:
+        return []
+
+    return query.all()
+
+
+def _documento_esta_vigente(documento: Documento, hoy: date | None = None) -> bool:
+    if documento.estatus != "VIGENTE":
+        return False
+
+    tipo_documento = documento.tipo_documento
+    if not tipo_documento or not tipo_documento.requiere_vigencia:
+        return True
+
+    fecha_referencia = hoy or date.today()
+    if documento.fecha_expiracion is None:
+        return False
+
+    return documento.fecha_expiracion >= fecha_referencia
+
+
+def _validar_requisito_documental(
+    db: Session,
+    requisito: dict[str, object],
+    entidades: dict[str, object | None],
+    clave_estatus_destino: str,
+) -> None:
+    aplica_a = str(requisito["aplica_a"])
+    obligatorio = bool(requisito.get("obligatorio", True))
+    entidad = entidades.get(aplica_a)
+    nombre_entidad = _formatear_nombre_entidad_documental(aplica_a)
+
+    if entidad is None:
+        if obligatorio:
+            raise ValueError(
+                f"La transición a {clave_estatus_destino} requiere {nombre_entidad} para validar documentos"
+            )
         return
 
-    documentos_no_vigentes = [
-        documento.id_documento
-        for documento in documentos_viaje
-        if documento.estatus != "VIGENTE"
-    ]
+    entidad_id = getattr(entidad, f"id_{aplica_a.lower()}", None)
+    if entidad_id is None and aplica_a == "VIAJE":
+        entidad_id = getattr(entidad, "id_viaje", None)
 
-    if documentos_no_vigentes:
+    if entidad_id is None:
+        if obligatorio:
+            raise ValueError(
+                f"La transición a {clave_estatus_destino} requiere {nombre_entidad} válido para validar documentos"
+            )
+        return
+
+    documentos = _obtener_documentos_por_entidad(db, aplica_a, entidad_id)
+    if not documentos:
+        if obligatorio:
+            raise ValueError(
+                f"La transición a {clave_estatus_destino} requiere al menos un documento vigente de {nombre_entidad}"
+            )
+        return
+
+    documentos_vigentes = [documento for documento in documentos if _documento_esta_vigente(documento)]
+    if not documentos_vigentes:
         raise ValueError(
-            f"La transición a {estatus_destino.clave} encontró documentos no vigentes asociados al viaje"
+            f"{nombre_entidad.capitalize()} no tiene documentos vigentes para permitir la transición a {clave_estatus_destino}"
         )
+
+
+def _formatear_nombre_entidad_documental(aplica_a: str) -> str:
+    nombres = {
+        "VIAJE": "el viaje",
+        "OPERADOR": "el operador actual",
+        "TRAILER": "el tráiler actual",
+        "CAJA": "la caja actual",
+    }
+    return nombres.get(aplica_a, "la entidad requerida")
 
 
 def get_operadores_disponibles(db: Session) -> list[Operador]:
