@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin, require_admin_or_operador
 from app.crud.crud_viajes import (
     archivo_storage_exists,
     caja_exists,
@@ -38,9 +39,12 @@ from app.crud.crud_viajes import (
     get_viaje_by_id,
     get_viajes,
     get_viajes_enriched,
+    get_viajes_visibles_para_operador,
     iniciar_carga_viaje,
     iniciar_viaje,
     marcar_retraso_viaje,
+    operador_puede_operar_viaje,
+    operador_puede_ver_viaje,
     operador_exists,
     poner_standby_viaje,
     reasignar_viaje,
@@ -52,6 +56,7 @@ from app.crud.crud_viajes import (
     update_viaje,
 )
 from app.db.deps import get_db
+from app.models.models import Usuario
 from app.schemas.documento import DocumentoCreate, DocumentoResponse, TipoDocumentoResponse
 from app.schemas.evidencia import (
     ArchivoStoragePruebaResponse,
@@ -84,11 +89,45 @@ from app.schemas.viaje import (
 router = APIRouter(prefix="/viajes", tags=["Viajes"])
 
 
+def _usuario_es_admin(current_user: Usuario) -> bool:
+    return current_user.rol.nombre.upper() == "ADMIN"
+
+
+def _validar_acceso_viaje(
+    db: Session,
+    viaje_id: int,
+    current_user: Usuario,
+    requiere_operacion: bool = False,
+) -> None:
+    if _usuario_es_admin(current_user):
+        return
+
+    if current_user.operador is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario actual no tiene perfil de operador",
+        )
+
+    operador_id = current_user.operador.id_operador
+    permitido = (
+        operador_puede_operar_viaje(db, operador_id, viaje_id)
+        if requiere_operacion
+        else operador_puede_ver_viaje(db, operador_id, viaje_id)
+    )
+
+    if not permitido:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para acceder a este viaje",
+        )
+
+
 @router.post("/", response_model=ViajeResponse, status_code=status.HTTP_201_CREATED)
 def create_new_viaje(
     viaje_in: ViajeCreate,
     created_by: int | None = Query(default=None),
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     existing_viaje = get_viaje_by_folio(db, viaje_in.folio)
     if existing_viaje:
@@ -117,8 +156,17 @@ def list_viajes(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
-    return get_viajes(db, skip=skip, limit=limit)
+    if _usuario_es_admin(current_user):
+        return get_viajes(db, skip=skip, limit=limit)
+
+    return get_viajes_visibles_para_operador(
+        db,
+        current_user.operador.id_operador,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get("/enriched", response_model=list[ViajeListItemResponse])
@@ -126,15 +174,27 @@ def list_viajes_enriched(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
-    return get_viajes_enriched(db, skip=skip, limit=limit)
+    if _usuario_es_admin(current_user):
+        return get_viajes_enriched(db, skip=skip, limit=limit)
+
+    return get_viajes_visibles_para_operador(
+        db,
+        current_user.operador.id_operador,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
     "/catalogos/tipos-evidencia",
     response_model=list[TipoEvidenciaResponse],
 )
-def list_tipos_evidencia(db: Session = Depends(get_db)):
+def list_tipos_evidencia(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_operador),
+):
     return get_tipos_evidencia(db)
 
 
@@ -142,7 +202,10 @@ def list_tipos_evidencia(db: Session = Depends(get_db)):
     "/catalogos/tipos-documento",
     response_model=list[TipoDocumentoResponse],
 )
-def list_tipos_documento(db: Session = Depends(get_db)):
+def list_tipos_documento(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_operador),
+):
     return get_tipos_documento(db)
 
 
@@ -150,12 +213,20 @@ def list_tipos_documento(db: Session = Depends(get_db)):
     "/archivos-prueba",
     response_model=list[ArchivoStoragePruebaResponse],
 )
-def list_archivos_prueba(db: Session = Depends(get_db)):
+def list_archivos_prueba(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_operador),
+):
     return get_archivos_storage_prueba(db)
 
 
 @router.get("/{viaje_id}", response_model=ViajeResponse)
-def get_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def get_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -166,7 +237,12 @@ def get_viaje(viaje_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{viaje_id}/detail", response_model=ViajeDetailResponse)
-def get_viaje_detail(viaje_id: int, db: Session = Depends(get_db)):
+def get_viaje_detail(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_detail_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -181,6 +257,7 @@ def update_existing_viaje(
     viaje_id: int,
     viaje_in: ViajeUpdate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
@@ -215,6 +292,7 @@ def create_new_asignacion_viaje(
     viaje_id: int,
     asignacion_in: ViajeAsignacionCreate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
@@ -254,7 +332,12 @@ def create_new_asignacion_viaje(
     "/{viaje_id}/asignaciones",
     response_model=list[ViajeAsignacionResponse],
 )
-def list_asignaciones_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_asignaciones_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -269,7 +352,12 @@ def list_asignaciones_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
     "/{viaje_id}/asignaciones/enriched",
     response_model=list[ViajeAsignacionEnrichedResponse],
 )
-def list_asignaciones_enriched_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_asignaciones_enriched_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -284,7 +372,12 @@ def list_asignaciones_enriched_by_viaje(viaje_id: int, db: Session = Depends(get
     "/{viaje_id}/historial-estatus",
     response_model=list[HistorialEstatusViajeResponse],
 )
-def list_historial_estatus_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_historial_estatus_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -299,7 +392,12 @@ def list_historial_estatus_by_viaje(viaje_id: int, db: Session = Depends(get_db)
     "/{viaje_id}/historial-estatus/enriched",
     response_model=list[HistorialEstatusViajeEnrichedResponse],
 )
-def list_historial_estatus_enriched_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_historial_estatus_enriched_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -319,7 +417,9 @@ def create_new_documento_viaje(
     viaje_id: int,
     documento_in: DocumentoCreate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -358,7 +458,12 @@ def create_new_documento_viaje(
     "/{viaje_id}/documentos",
     response_model=list[DocumentoResponse],
 )
-def list_documentos_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_documentos_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -378,7 +483,9 @@ def create_documento_operador_actual(
     viaje_id: int,
     documento_in: DocumentoCreate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -417,7 +524,12 @@ def create_documento_operador_actual(
     "/{viaje_id}/operador-actual/documentos",
     response_model=list[DocumentoResponse],
 )
-def list_documentos_operador_actual(viaje_id: int, db: Session = Depends(get_db)):
+def list_documentos_operador_actual(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -442,7 +554,9 @@ def create_documento_trailer_actual(
     viaje_id: int,
     documento_in: DocumentoCreate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -481,7 +595,12 @@ def create_documento_trailer_actual(
     "/{viaje_id}/trailer-actual/documentos",
     response_model=list[DocumentoResponse],
 )
-def list_documentos_trailer_actual(viaje_id: int, db: Session = Depends(get_db)):
+def list_documentos_trailer_actual(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -506,7 +625,9 @@ def create_documento_caja_actual(
     viaje_id: int,
     documento_in: DocumentoCreate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -545,7 +666,12 @@ def create_documento_caja_actual(
     "/{viaje_id}/caja-actual/documentos",
     response_model=list[DocumentoResponse],
 )
-def list_documentos_caja_actual(viaje_id: int, db: Session = Depends(get_db)):
+def list_documentos_caja_actual(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -570,7 +696,9 @@ def create_new_evidencia_viaje(
     viaje_id: int,
     evidencia_in: ViajeEvidenciaCreate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -609,7 +737,12 @@ def create_new_evidencia_viaje(
     "/{viaje_id}/evidencias",
     response_model=list[ViajeEvidenciaResponse],
 )
-def list_evidencias_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
+def list_evidencias_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -624,7 +757,13 @@ def list_evidencias_by_viaje(viaje_id: int, db: Session = Depends(get_db)):
     "/{viaje_id}/evidencias/{evidencia_id}",
     response_model=ViajeEvidenciaResponse,
 )
-def get_evidencia(viaje_id: int, evidencia_id: int, db: Session = Depends(get_db)):
+def get_evidencia(
+    viaje_id: int,
+    evidencia_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -651,7 +790,9 @@ def update_evidencia(
     evidencia_id: int,
     evidencia_in: ViajeEvidenciaUpdate,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -700,7 +841,13 @@ def update_evidencia(
     "/{viaje_id}/evidencias/{evidencia_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def delete_evidencia(viaje_id: int, evidencia_id: int, db: Session = Depends(get_db)):
+def delete_evidencia(
+    viaje_id: int,
+    evidencia_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -724,7 +871,9 @@ def cambiar_estatus(
     viaje_id: int,
     cambio_in: ViajeCambioEstatus,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -745,7 +894,10 @@ def cambiar_estatus(
     "/disponibilidad/operadores",
     response_model=list[OperadorDisponibleResponse],
 )
-def list_operadores_disponibles(db: Session = Depends(get_db)):
+def list_operadores_disponibles(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_operadores_disponibles(db)
 
 
@@ -753,7 +905,10 @@ def list_operadores_disponibles(db: Session = Depends(get_db)):
     "/disponibilidad/trailers",
     response_model=list[TrailerDisponibleResponse],
 )
-def list_trailers_disponibles(db: Session = Depends(get_db)):
+def list_trailers_disponibles(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_trailers_disponibles(db)
 
 
@@ -761,14 +916,22 @@ def list_trailers_disponibles(db: Session = Depends(get_db)):
     "/disponibilidad/cajas",
     response_model=list[CajaDisponibleResponse],
 )
-def list_cajas_disponibles(db: Session = Depends(get_db)):
+def list_cajas_disponibles(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_cajas_disponibles(db)
 
 @router.get(
     "/{viaje_id}/transiciones-disponibles",
     response_model=list[TransicionDisponibleResponse],
 )
-def list_transiciones_disponibles(viaje_id: int, db: Session = Depends(get_db)):
+def list_transiciones_disponibles(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -795,6 +958,7 @@ def asignar_viaje(
     viaje_id: int,
     asignacion_in: ViajeAsignacionCreate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
@@ -835,7 +999,9 @@ def iniciar_carga(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -862,7 +1028,9 @@ def iniciar_viaje_endpoint(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -889,7 +1057,9 @@ def marcar_retraso(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -916,7 +1086,9 @@ def poner_standby(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -943,6 +1115,7 @@ def reasignar(
     viaje_id: int,
     reasignacion_in: ViajeReasignacionCreate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
@@ -992,7 +1165,9 @@ def finalizar(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
 ):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -1019,6 +1194,7 @@ def cancelar(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -9,6 +10,7 @@ from app.api.routes_operadores import router as operadores_router
 from app.api.routes_clientes import router as clientes_router
 from app.api.routes_trailers import router as trailers_router
 from app.api.routes_cajas import router as cajas_router
+from app.api.routes_auth import router as auth_router
 from app.api.routes_viajes import router as viajes_router
 from app.db.base import Base
 from app.db.database import SessionLocal, engine
@@ -19,6 +21,14 @@ import app.models  # noqa: F401
 
 
 app = FastAPI(title=settings.app_name)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -35,6 +45,7 @@ def on_startup():
 
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(roles_router)
 app.include_router(usuarios_router)
 app.include_router(operadores_router)

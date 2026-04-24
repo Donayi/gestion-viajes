@@ -54,6 +54,70 @@ def get_viajes(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
     return db.query(Viaje).offset(skip).limit(limit).all()
 
 
+def get_viajes_visibles_para_operador(
+    db: Session,
+    operador_id: int,
+    skip: int = 0,
+    limit: int = 100,
+) -> list[Viaje]:
+    subquery_viajes_con_asignacion_activa = (
+        db.query(AsignacionViaje.id_viaje)
+        .filter(
+            AsignacionViaje.id_operador == operador_id,
+            AsignacionViaje.activo.is_(True),
+        )
+        .subquery()
+    )
+
+    return (
+        db.query(Viaje)
+        .options(
+            joinedload(Viaje.cliente),
+            joinedload(Viaje.estatus_actual),
+            joinedload(Viaje.operador_actual),
+            joinedload(Viaje.trailer_actual),
+            joinedload(Viaje.caja_actual),
+        )
+        .filter(
+            or_(
+                Viaje.id_operador_actual == operador_id,
+                Viaje.id_viaje.in_(subquery_viajes_con_asignacion_activa),
+            )
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def operador_puede_ver_viaje(db: Session, operador_id: int, viaje_id: int) -> bool:
+    subquery_viajes_con_asignacion_activa = (
+        db.query(AsignacionViaje.id_viaje)
+        .filter(
+            AsignacionViaje.id_operador == operador_id,
+            AsignacionViaje.activo.is_(True),
+        )
+        .subquery()
+    )
+
+    return (
+        db.query(Viaje)
+        .filter(
+            Viaje.id_viaje == viaje_id,
+            or_(
+                Viaje.id_operador_actual == operador_id,
+                Viaje.id_viaje.in_(subquery_viajes_con_asignacion_activa),
+            ),
+        )
+        .first()
+        is not None
+    )
+
+
+def operador_puede_operar_viaje(db: Session, operador_id: int, viaje_id: int) -> bool:
+    return operador_puede_ver_viaje(db, operador_id, viaje_id)
+
+
 def get_viajes_enriched(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
     return (
         db.query(Viaje)

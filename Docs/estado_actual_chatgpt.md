@@ -21,6 +21,29 @@ Este proyecto fue diseñado iterativamente con enfoque en:
 * Tráileres
 * Cajas
 
+### Seguridad mínima implementada
+
+* Bootstrap inicial de administrador con `POST /auth/bootstrap-admin`
+* Login JWT con Bearer token
+* `GET /auth/me` para validar sesión
+* Autorización por roles:
+  * `ADMIN`
+  * `OPERADOR`
+* Restricción contextual de viajes para operadores
+
+### Frontend base implementado
+
+* `frontend/` con `Next.js + TypeScript + TailwindCSS`
+* Login conectado a `POST /auth/login`
+* Sesión validada con `GET /auth/me`
+* Layout protegido en:
+  * `/dashboard`
+  * `/viajes`
+* Dashboard básico con métricas simples
+* Lista de viajes enriquecidos
+* Detalle de viaje con historial y asignaciones enriquecidas
+* Acciones básicas de workflow desde UI
+
 ---
 
 ## 🚛 Módulo de viajes (núcleo del sistema)
@@ -160,6 +183,14 @@ No disponibles si:
 
 ---
 
+### 4. Autorización contextual reutilizable
+
+✔ La autenticación vive fuera del workflow
+✔ La pertenencia de viajes para operadores se resuelve desde `crud_viajes.py`
+✔ Las rutas solo aplican dependencias y validaciones de acceso
+
+---
+
 ## 🚧 Pendientes prioritarios
 
 ### 1. Validación de evidencias
@@ -281,15 +312,55 @@ GET /catalogos/estatus
 
 ---
 
+### 6. Seguridad y permisos
+
+Estado implementado:
+
+* `POST /auth/bootstrap-admin`
+* `POST /auth/login`
+* `GET /auth/me`
+* JWT con payload mínimo:
+  * `sub`
+  * `username`
+  * `role`
+  * `operator_id`
+* El bootstrap inicial:
+  * detecta si ya existe un usuario con rol `ADMIN`
+  * crea el rol `ADMIN` si aún no existe
+  * crea el primer usuario administrador usando el hashing actual
+  * deja de estar disponible en cuanto ya existe un `ADMIN`
+* `ADMIN` accede a rutas administrativas y operativas
+* `OPERADOR` accede solo a rutas operativas sobre sus propios viajes
+
+Primera capa protegida:
+
+* `roles`
+* `usuarios`
+* rutas operativas y de consulta de viajes
+
+---
+
 ## 🎯 Siguiente objetivo recomendado
 
 Implementar:
 
-👉 Refinar clasificación de evidencias de inicio/cierre y sustituir archivos mock por integración real de almacenamiento
+👉 Subida real de evidencias/documentos y refinamiento de la experiencia mobile operativa
 
 ---
 
 ## 🧪 Pruebas manuales recomendadas en Swagger
+
+Autenticación:
+
+1. Si la base aún no tiene administrador, ejecutar `POST /auth/bootstrap-admin`
+2. Confirmar creación exitosa del primer `ADMIN`
+3. Repetir `POST /auth/bootstrap-admin` y confirmar rechazo por bootstrap cerrado
+4. Ejecutar `POST /auth/login`
+5. Copiar el `access_token`
+6. Usar `Authorize` en Swagger con el token Bearer
+7. Ejecutar `GET /auth/me` y validar identidad, rol e `id_operador` si aplica
+
+Autorización:
 
 1. Crear viaje
 2. Asignar operador + tráiler + caja
@@ -308,6 +379,9 @@ Implementar:
 15. Cargar documentos vigentes para operador y tráiler, y para caja si aplica
 16. Reintentar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
 17. Ejecutar `POST /viajes/{id}/finalizar` y confirmar que la validación documental solo aplica a recursos actuales presentes
+18. Con `ADMIN`, verificar acceso a `/roles` y `/usuarios`
+19. Con `OPERADOR`, verificar `403` en `/roles`, `/usuarios` y `POST /viajes`
+20. Con `OPERADOR`, verificar acceso a sus propios viajes y `403` en viajes ajenos
 
 ---
 

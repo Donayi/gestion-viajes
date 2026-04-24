@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 from app.crud.crud_usuarios import (
     create_user,
@@ -15,7 +16,11 @@ router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_new_user(user_in: UserCreate, db: Session = Depends(get_db)):
+def create_new_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     existing_user = get_user_by_username(db, user_in.username)
     if existing_user:
         raise HTTPException(
@@ -33,12 +38,21 @@ def create_new_user(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[UserResponse])
-def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_users(db, skip=skip, limit=limit)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_user = get_user_by_id(db, user_id)
     if not db_user:
         raise HTTPException(

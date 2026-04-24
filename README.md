@@ -19,6 +19,7 @@ El sistema implementa reglas operativas reales del negocio logístico.
 * **Base de datos:** PostgreSQL
 * **ORM:** SQLAlchemy
 * **Contenedores:** Docker + Docker Compose
+* **Auth:** JWT Bearer + roles (`ADMIN`, `OPERADOR`)
 
 ---
 
@@ -29,10 +30,20 @@ docker compose down
 docker compose up --build
 ```
 
+Frontend:
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
 Accesos:
 
 * API: http://localhost:8080
 * Swagger: http://localhost:8080/docs
+* Frontend: http://localhost:3000
 
 ---
 
@@ -50,6 +61,7 @@ backend/
 infra/
   docker-compose.yml
 docs/
+frontend/
 ```
 
 ---
@@ -119,6 +131,12 @@ Se calcula dinámicamente (NO se guarda en tablas):
 
 ## 🚀 Endpoints principales
 
+### Auth
+
+* `POST /auth/bootstrap-admin`
+* `POST /auth/login`
+* `GET /auth/me`
+
 ### Viajes
 
 * `POST /viajes`
@@ -187,7 +205,66 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * Se incluyen seeds de `tipos_evidencia` y `archivos_storage` de prueba para usar Swagger sin integración real con R2
 * Existen vistas enriquecidas de lectura para viajes, historial-estatus y asignaciones orientadas a frontend
 
+### Seguridad y roles
+
+* La API usa autenticación JWT Bearer compatible con Swagger
+* Existe `POST /auth/bootstrap-admin` para crear el primer `ADMIN` si todavía no existe ninguno
+* El bootstrap inicial:
+  * crea el rol `ADMIN` si aún no existe
+  * crea el primer usuario administrador
+  * se cierra automáticamente cuando ya existe al menos un usuario con rol `ADMIN`
+* Existe `GET /auth/me` para consultar el usuario autenticado actual
+* `ADMIN` puede usar toda la capa administrativa y operativa expuesta
+* `OPERADOR` puede consultar y operar solo sobre sus propios viajes
+* La pertenencia de un viaje para `OPERADOR` se valida por:
+  * `id_operador_actual`
+  * o asignación activa del operador en ese viaje
+
+### Frontend base implementado
+
+* `Next.js + TypeScript + TailwindCSS`
+* Login con JWT Bearer
+* Validación de sesión usando `GET /auth/me`
+* Layout protegido bajo `/dashboard` y `/viajes`
+* Dashboard con métricas simples
+* Lista de viajes con:
+  * tabla desktop para `ADMIN`
+  * cards mobile-first para `OPERADOR`
+* Detalle de viaje con:
+  * resumen
+  * historial enriquecido
+  * asignaciones enriquecidas
+  * acciones básicas de workflow
+
+### Variables de entorno del frontend
+
+Archivo:
+
+* `frontend/.env.local`
+
+Variables:
+
+* `NEXT_PUBLIC_API_URL=http://localhost:8080`
+
 ### Pruebas manuales sugeridas en Swagger
+
+Autenticación:
+
+1. Si todavía no existe ningún administrador, ejecutar `POST /auth/bootstrap-admin`
+2. Confirmar respuesta `201` con el usuario `ADMIN` creado
+3. Intentar ejecutar de nuevo `POST /auth/bootstrap-admin` y confirmar rechazo claro
+4. Ejecutar `POST /auth/login` con `username` y `password`
+5. Copiar `access_token`
+6. Usar el botón `Authorize` de Swagger con el token Bearer
+7. Ejecutar `GET /auth/me` y confirmar:
+   * `id_usuario`
+   * `username`
+   * `nombre`
+   * `apellido`
+   * `rol`
+   * `id_operador` si aplica
+
+Autorización:
 
 1. Crear un viaje con `POST /viajes`
 2. Asignar recursos con `POST /viajes/{id}/asignar`
@@ -205,6 +282,23 @@ Se calcula dinámicamente (NO se guarda en tablas):
 14. Si el viaje tiene caja, crear documento válido con `POST /viajes/{id}/caja-actual/documentos`
 15. Reintentar `POST /viajes/{id}/iniciar-viaje` y confirmar éxito
 16. Con `strict_evidence_validation=true`, probar `POST /viajes/{id}/finalizar` y confirmar que solo valida documentos de recursos actuales presentes
+
+Roles:
+
+1. Con usuario `ADMIN`, verificar acceso a:
+   * `GET /roles`
+   * `GET /usuarios`
+   * `POST /viajes`
+2. Con usuario `OPERADOR`, verificar rechazo `403` en:
+   * `GET /roles`
+   * `GET /usuarios`
+   * `POST /viajes`
+3. Con usuario `OPERADOR`, verificar acceso a su propio viaje en:
+   * `GET /viajes`
+   * `GET /viajes/enriched`
+   * `GET /viajes/{id}`
+   * `POST /viajes/{id}/iniciar-carga`
+4. Con usuario `OPERADOR`, probar acceso a un viaje ajeno y confirmar `403`
 
 ---
 

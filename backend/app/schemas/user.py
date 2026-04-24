@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
 
 class UserBase(BaseModel):
@@ -13,7 +13,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: SecretStr
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_length(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value().encode("utf-8")) > 72:
+            raise ValueError("La password no puede exceder 72 bytes")
+        return value
 
 
 class UserUpdate(BaseModel):
@@ -24,7 +31,16 @@ class UserUpdate(BaseModel):
     telefono: str | None = None
     activo: bool | None = None
     id_rol: int | None = None
-    password: str | None = None
+    password: SecretStr | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_length(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None:
+            return value
+        if len(value.get_secret_value().encode("utf-8")) > 72:
+            raise ValueError("La password no puede exceder 72 bytes")
+        return value
 
 
 class UserResponse(BaseModel):
