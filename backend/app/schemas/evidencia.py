@@ -63,3 +63,15 @@ class ArchivoStoragePruebaResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PresignUploadRequest(BaseModel):
+    filename: str
+    content_type: str
+    size_bytes: int | None = None
+
+
+class PresignUploadResponse(BaseModel):
+    upload_url: str
+    file_key: str
+    id_archivo: int

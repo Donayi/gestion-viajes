@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkflow } from "@/hooks/use-workflow";
-import type { ViajeDetail } from "@/types/viaje";
+import type { ViajeDetail, WorkflowOperationalPayload } from "@/types/viaje";
 
 type ActionOption = {
   key: "iniciar-carga" | "iniciar-viaje" | "marcar-retraso" | "poner-standby" | "finalizar";
@@ -29,6 +30,11 @@ export function WorkflowActions({
   onSuccess: () => Promise<void>;
 }) {
   const [comentario, setComentario] = useState("");
+  const [kilometraje, setKilometraje] = useState("");
+  const [nivelDiesel, setNivelDiesel] = useState("");
+  const [ubicacion, setUbicacion] = useState("");
+  const [latitud, setLatitud] = useState("");
+  const [longitud, setLongitud] = useState("");
   const { runAction, loadingAction, error, clearError } = useWorkflow(viaje.id_viaje, onSuccess);
 
   const title = useMemo(
@@ -44,7 +50,49 @@ export function WorkflowActions({
       if (!confirmed) return;
     }
 
-    await runAction(action.key, comentario);
+    if (action.key === "iniciar-viaje" || action.key === "poner-standby" || action.key === "finalizar") {
+      const payload = buildOperationalPayload();
+      if (!payload) return;
+      await runAction(action.key, payload);
+      return;
+    }
+
+    await runAction(action.key, { comentario: comentario || null });
+  }
+
+  function buildOperationalPayload(): WorkflowOperationalPayload | null {
+    const parsedKilometraje = Number(kilometraje);
+    const parsedNivelDiesel = Number(nivelDiesel);
+    const trimmedUbicacion = ubicacion.trim();
+
+    if (!Number.isFinite(parsedKilometraje) || parsedKilometraje < 0) {
+      window.alert("Captura un kilometraje válido mayor o igual a 0.");
+      return null;
+    }
+
+    if (!Number.isFinite(parsedNivelDiesel) || parsedNivelDiesel < 0 || parsedNivelDiesel > 100) {
+      window.alert("Captura un nivel de diésel entre 0 y 100.");
+      return null;
+    }
+
+    if (!trimmedUbicacion) {
+      window.alert("La ubicación es obligatoria para esta acción.");
+      return null;
+    }
+
+    if ((latitud.trim() && !longitud.trim()) || (!latitud.trim() && longitud.trim())) {
+      window.alert("Latitud y longitud deben enviarse juntas.");
+      return null;
+    }
+
+    return {
+      kilometraje: parsedKilometraje,
+      nivel_diesel: parsedNivelDiesel,
+      ubicacion: trimmedUbicacion,
+      latitud: latitud.trim() ? Number(latitud) : null,
+      longitud: longitud.trim() ? Number(longitud) : null,
+      comentario: comentario || null
+    };
   }
 
   return (
@@ -66,6 +114,43 @@ export function WorkflowActions({
           placeholder="Agrega contexto para la accion si hace falta"
           value={comentario}
         />
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <Input
+          label="Kilometraje (para iniciar viaje / standby / finalizar)"
+          min="0"
+          onChange={(event) => setKilometraje(event.target.value)}
+          type="number"
+          value={kilometraje}
+        />
+        <Input
+          label="Nivel de diésel (%)"
+          max="100"
+          min="0"
+          onChange={(event) => setNivelDiesel(event.target.value)}
+          type="number"
+          value={nivelDiesel}
+        />
+        <Input
+          label="Ubicación"
+          onChange={(event) => setUbicacion(event.target.value)}
+          value={ubicacion}
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Input
+            label="Latitud"
+            onChange={(event) => setLatitud(event.target.value)}
+            type="number"
+            value={latitud}
+          />
+          <Input
+            label="Longitud"
+            onChange={(event) => setLongitud(event.target.value)}
+            type="number"
+            value={longitud}
+          />
+        </div>
       </div>
 
       {error ? (

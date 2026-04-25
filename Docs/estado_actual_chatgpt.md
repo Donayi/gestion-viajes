@@ -43,6 +43,7 @@ Este proyecto fue diseñado iterativamente con enfoque en:
 * Lista de viajes enriquecidos
 * Detalle de viaje con historial y asignaciones enriquecidas
 * Acciones básicas de workflow desde UI
+* Subida real de evidencias desde frontend usando presigned URLs hacia Cloudflare R2
 
 ---
 
@@ -157,6 +158,8 @@ No disponibles si:
 * `/viajes/{id}/reasignar`
 * `/viajes/{id}/finalizar`
 * `/viajes/{id}/cancelar`
+* `/viajes/{id}/eventos-operativos`
+* `/viajes/kpis-operativos`
 
 ---
 
@@ -228,6 +231,121 @@ Compatibilidad:
 * Ya existe un CRUD base de evidencias anidado bajo viajes para desbloquear pruebas operativas
 * Ya existe un CRUD mínimo de documentos asociado al viaje y a recursos actuales para probar validación estricta
 * Se sembraron `tipos_evidencia` y `archivos_storage` de prueba para usar Swagger sin integración real con R2
+
+### Captura operativa para KPIs
+
+Se agregó la tabla:
+
+* `eventos_operativos_viaje`
+
+Propósito:
+
+* guardar snapshots operativos sin alterar `historial_estatus_viaje`
+* habilitar KPIs de kilometraje, diésel y ubicación
+
+Tipos de evento actuales:
+
+* `INICIO_VIAJE`
+* `STANDBY`
+* `FINALIZACION_VIAJE`
+
+Endpoints afectados:
+
+* `POST /viajes/{id}/iniciar-viaje`
+* `POST /viajes/{id}/poner-standby`
+* `POST /viajes/{id}/finalizar`
+
+Payload obligatorio en esas acciones:
+
+* `kilometraje`
+* `nivel_diesel`
+* `ubicacion`
+* `latitud` opcional
+* `longitud` opcional
+* `comentario` opcional
+
+Validaciones:
+
+* `kilometraje >= 0`
+* `nivel_diesel` entre `0` y `100`
+* `ubicacion` obligatoria y no vacía
+* si se envía `latitud`, también debe enviarse `longitud`
+* si se envía `longitud`, también debe enviarse `latitud`
+
+Lectura:
+
+* `GET /viajes/{id}/detail` incluye `eventos_operativos`
+* `GET /viajes/{id}/eventos-operativos` devuelve la colección explícita
+
+Frontend:
+
+* el panel móvil del operador abre una captura tipo bottom-sheet antes de `iniciar viaje`, `standby` y `finalizar`
+* permite usar ubicación actual del navegador si está disponible
+
+### Dashboard de KPIs operativos
+
+Se agregó una capa analítica separada del workflow:
+
+* `GET /viajes/kpis-operativos`
+
+KPIs calculados:
+
+* `total_viajes_con_eventos`
+* `km_total_recorridos`
+* `km_promedio_por_viaje`
+* `diesel_total_consumido_estimado`
+* `diesel_promedio_consumido`
+* `numero_total_standbys`
+* `viajes_finalizados_con_kpi`
+
+Filtros soportados:
+
+* `fecha_desde`
+* `fecha_hasta`
+* `id_operador`
+* `id_cliente`
+* `id_estatus`
+* `solo_completos`
+
+Autorización:
+
+* `ADMIN` ve todos los KPIs
+* `OPERADOR` ve solo sus viajes
+* si `OPERADOR` manda `id_operador`, se ignora y se usa su `id_operador`
+
+Tabla por viaje:
+
+* `folio`
+* `cliente`
+* `operador`
+* `km_inicio`
+* `km_final`
+* `km_recorridos`
+* `diesel_inicio`
+* `diesel_final`
+* `diesel_consumido`
+* `numero_standbys`
+* `ubicacion_inicio`
+* `ubicacion_final`
+* `fecha_inicio`
+* `fecha_finalizacion`
+* `kpi_completo`
+* `kpi_valido`
+* `anomalia`
+
+Anomalías:
+
+* `EVENTO_INICIO_FALTANTE`
+* `EVENTO_FINAL_FALTANTE`
+* `KM_FINAL_MENOR_INICIO`
+* `DIESEL_FINAL_MAYOR_INICIO`
+
+Frontend:
+
+* nueva ruta `/dashboard/kpis`
+* cards resumen en tonos azules
+* barra de filtros
+* tabla ejecutiva por viaje
 
 ### Validación documental estricta implementada
 
@@ -319,6 +437,7 @@ Estado implementado:
 * `POST /auth/bootstrap-admin`
 * `POST /auth/login`
 * `GET /auth/me`
+* `POST /evidencias/presign-upload`
 * JWT con payload mínimo:
   * `sub`
   * `username`
@@ -331,6 +450,7 @@ Estado implementado:
   * deja de estar disponible en cuanto ya existe un `ADMIN`
 * `ADMIN` accede a rutas administrativas y operativas
 * `OPERADOR` accede solo a rutas operativas sobre sus propios viajes
+* Para acciones operativas como `FINALIZADO`, el ownership del operador también reconoce asignación histórica si el viaje no está actualmente ligado a otro operador
 
 Primera capa protegida:
 

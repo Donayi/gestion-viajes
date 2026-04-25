@@ -1,7 +1,11 @@
 import { apiFetch } from "@/services/api-client";
-import type { ViajeComentarioAccion, ViajeDetail } from "@/types/viaje";
+import type {
+  ViajeComentarioAccion,
+  ViajeDetail,
+  WorkflowOperationalPayload
+} from "@/types/viaje";
 
-function postAction(path: string, payload: ViajeComentarioAccion) {
+function postAction(path: string, payload: ViajeComentarioAccion | WorkflowOperationalPayload) {
   return apiFetch<ViajeDetail>(path, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -15,7 +19,7 @@ export function iniciarCargaRequest(viajeId: number, payload: ViajeComentarioAcc
   return postAction(`/viajes/${viajeId}/iniciar-carga`, payload);
 }
 
-export function iniciarViajeRequest(viajeId: number, payload: ViajeComentarioAccion) {
+export function iniciarViajeRequest(viajeId: number, payload: WorkflowOperationalPayload) {
   return postAction(`/viajes/${viajeId}/iniciar-viaje`, payload);
 }
 
@@ -23,10 +27,10 @@ export function marcarRetrasoRequest(viajeId: number, payload: ViajeComentarioAc
   return postAction(`/viajes/${viajeId}/marcar-retraso`, payload);
 }
 
-export function ponerStandbyRequest(viajeId: number, payload: ViajeComentarioAccion) {
+export function ponerStandbyRequest(viajeId: number, payload: WorkflowOperationalPayload) {
   return postAction(`/viajes/${viajeId}/poner-standby`, payload);
 }
 
-export function finalizarViajeRequest(viajeId: number, payload: ViajeComentarioAccion) {
+export function finalizarViajeRequest(viajeId: number, payload: WorkflowOperationalPayload) {
   return postAction(`/viajes/${viajeId}/finalizar`, payload);
 }

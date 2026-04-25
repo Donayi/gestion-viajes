@@ -10,6 +10,7 @@ import {
   marcarRetrasoRequest,
   ponerStandbyRequest
 } from "@/services/workflow.service";
+import type { ViajeComentarioAccion, WorkflowOperationalPayload } from "@/types/viaje";
 
 type ActionType =
   | "iniciar-carga"
@@ -30,17 +31,26 @@ export function useWorkflow(viajeId: number, onSuccess: () => Promise<void> | vo
   const [loadingAction, setLoadingAction] = useState<ActionType | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function runAction(action: ActionType, comentario: string) {
+  async function runAction(
+    action: ActionType,
+    payload: ViajeComentarioAccion | WorkflowOperationalPayload
+  ) {
     setLoadingAction(action);
     setError(null);
 
     try {
-      await actionMap[action](viajeId, { comentario: comentario || null });
+      const request = actionMap[action] as (
+        currentViajeId: number,
+        currentPayload: ViajeComentarioAccion | WorkflowOperationalPayload
+      ) => Promise<unknown>;
+      await request(viajeId, payload);
       await onSuccess();
+      return true;
     } catch (error) {
       const message =
         error instanceof ApiError ? error.message : "No fue posible ejecutar la accion";
       setError(message);
+      return false;
     } finally {
       setLoadingAction(null);
     }

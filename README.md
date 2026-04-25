@@ -136,6 +136,7 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * `POST /auth/bootstrap-admin`
 * `POST /auth/login`
 * `GET /auth/me`
+* `POST /evidencias/presign-upload`
 
 ### Viajes
 
@@ -162,6 +163,8 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * `POST /viajes/{id}/caja-actual/documentos`
 * `GET /viajes/{id}/caja-actual/documentos`
 * `GET /viajes/{id}/asignaciones/enriched`
+* `GET /viajes/{id}/eventos-operativos`
+* `GET /viajes/kpis-operativos`
 * `GET /viajes/{id}/historial-estatus/enriched`
 * `POST /viajes/{id}/iniciar-carga`
 * `POST /viajes/{id}/iniciar-viaje`
@@ -199,6 +202,28 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * Para `FINALIZADO` con validación estricta activa:
   * mantiene validación de evidencia
   * valida documentos solo de los recursos actuales aún ligados al viaje, sin bloquear por recursos ausentes
+* Existe tabla `eventos_operativos_viaje` para capturar snapshots operativos del flujo
+* Los endpoints `iniciar-viaje`, `poner-standby` y `finalizar` ahora capturan:
+  * kilometraje
+  * nivel_diesel
+  * ubicacion
+  * latitud / longitud opcionales
+  * comentario opcional
+* Los tipos de evento operativos son:
+  * `INICIO_VIAJE`
+  * `STANDBY`
+  * `FINALIZACION_VIAJE`
+* `GET /viajes/{id}/detail` incluye `eventos_operativos`
+* También existe `GET /viajes/{id}/eventos-operativos` para consulta directa
+* Existe `GET /viajes/kpis-operativos` para dashboard analítico con filtros:
+  * `fecha_desde`
+  * `fecha_hasta`
+  * `id_operador`
+  * `id_cliente`
+  * `id_estatus`
+  * `solo_completos`
+* `ADMIN` ve todos los KPIs
+* `OPERADOR` ve solo sus viajes; si envía `id_operador`, se ignora y se usa su propio operador
 * El CRUD base de evidencias se expone como submódulo de viajes
 * Existe un CRUD mínimo de documentos para asociar documentos al viaje y a los recursos actuales del viaje
 * Se incluyen seeds de `tipos_documento` para pruebas operativas mínimas
@@ -219,6 +244,7 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * La pertenencia de un viaje para `OPERADOR` se valida por:
   * `id_operador_actual`
   * o asignación activa del operador en ese viaje
+* Para operación/finalización, también se reconoce asignación histórica del operador si el viaje ya no pertenece actualmente a otro operador
 
 ### Frontend base implementado
 
@@ -227,6 +253,7 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * Validación de sesión usando `GET /auth/me`
 * Layout protegido bajo `/dashboard` y `/viajes`
 * Dashboard con métricas simples
+* Página nueva `/dashboard/kpis` con dashboard ejecutivo de KPIs operativos
 * Lista de viajes con:
   * tabla desktop para `ADMIN`
   * cards mobile-first para `OPERADOR`
@@ -234,7 +261,13 @@ Se calcula dinámicamente (NO se guarda en tablas):
   * resumen
   * historial enriquecido
   * asignaciones enriquecidas
+  * eventos operativos
   * acciones básicas de workflow
+* Para `OPERADOR`, `iniciar viaje`, `standby` y `finalizar` abren una captura móvil de datos operativos
+* El dashboard de KPIs incluye:
+  * tarjetas resumen
+  * filtros por fecha, operador, cliente y estatus
+  * tabla por viaje con anomalías e integridad KPI
 
 ### Variables de entorno del frontend
 
@@ -245,6 +278,17 @@ Archivo:
 Variables:
 
 * `NEXT_PUBLIC_API_URL=http://localhost:8080`
+
+### Variables de entorno backend para R2
+
+Agregar en `infra/.env` o en el entorno del backend:
+
+* `R2_ACCOUNT_ID`
+* `R2_ACCESS_KEY_ID`
+* `R2_SECRET_ACCESS_KEY`
+* `R2_BUCKET`
+* opcional: `R2_ENDPOINT_URL`
+* opcional: `R2_PUBLIC_BASE_URL`
 
 ### Pruebas manuales sugeridas en Swagger
 

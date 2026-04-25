@@ -11,6 +11,7 @@ from app.api.routes_clientes import router as clientes_router
 from app.api.routes_trailers import router as trailers_router
 from app.api.routes_cajas import router as cajas_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_evidencias import router as evidencias_router
 from app.api.routes_viajes import router as viajes_router
 from app.db.base import Base
 from app.db.database import SessionLocal, engine
@@ -46,6 +47,7 @@ def on_startup():
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(evidencias_router)
 app.include_router(roles_router)
 app.include_router(usuarios_router)
 app.include_router(operadores_router)

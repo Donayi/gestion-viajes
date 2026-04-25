@@ -4,14 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/cn";
-
-const items = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/viajes", label: "Viajes" }
-];
+import { useSession } from "@/hooks/use-session";
+import { isAdmin } from "@/lib/permissions";
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { user } = useSession();
+  const items = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/viajes", label: "Viajes" },
+    ...(isAdmin(user) ? [{ href: "/dashboard/kpis", label: "KPIs" }] : [])
+  ];
 
   return (
     <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white xl:flex xl:flex-col">

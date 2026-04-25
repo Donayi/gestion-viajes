@@ -6,6 +6,7 @@ from app.models.models import (
     Cliente,
     Documento,
     Evidencia,
+    EventoOperativoViaje,
     HistorialEstatusViaje,
     Incidencia,
     IncidenciaArchivo,
@@ -36,6 +37,7 @@ __all__ = [
     "Documento",
     "TipoEvidencia",
     "Evidencia",
+    "EventoOperativoViaje",
     "Incidencia",
     "IncidenciaArchivo",
 ]

@@ -66,6 +66,10 @@ class Usuario(Base):
 
     archivos_subidos = relationship("ArchivoStorage", back_populates="usuario_subio")
     documentos_subidos = relationship("Documento", back_populates="usuario_subio")
+    eventos_operativos_creados = relationship(
+        "EventoOperativoViaje",
+        back_populates="usuario_creador",
+    )
 
     asignaciones_creadas = relationship(
         "AsignacionViaje",
@@ -101,6 +105,7 @@ class Operador(Base):
 
     documentos = relationship("Documento", back_populates="operador")
     evidencias = relationship("Evidencia", back_populates="operador")
+    eventos_operativos = relationship("EventoOperativoViaje", back_populates="operador")
     incidencias = relationship("Incidencia", back_populates="operador")
 
 
@@ -133,6 +138,7 @@ class Trailer(Base):
     asignaciones = relationship("AsignacionViaje", back_populates="trailer")
 
     documentos = relationship("Documento", back_populates="trailer")
+    eventos_operativos = relationship("EventoOperativoViaje", back_populates="trailer")
 
 
 class Caja(Base):
@@ -165,6 +171,7 @@ class Caja(Base):
     asignaciones = relationship("AsignacionViaje", back_populates="caja")
 
     documentos = relationship("Documento", back_populates="caja")
+    eventos_operativos = relationship("EventoOperativoViaje", back_populates="caja")
 
 
 class Cliente(Base):
@@ -303,6 +310,11 @@ class Viaje(Base):
 
     historial_estatus = relationship("HistorialEstatusViaje", back_populates="viaje")
     asignaciones = relationship("AsignacionViaje", back_populates="viaje")
+    eventos_operativos = relationship(
+        "EventoOperativoViaje",
+        back_populates="viaje",
+        order_by="desc(EventoOperativoViaje.created_at)",
+    )
 
     documentos = relationship("Documento", back_populates="viaje")
     evidencias = relationship("Evidencia", back_populates="viaje")
@@ -354,6 +366,31 @@ class AsignacionViaje(Base):
     trailer = relationship("Trailer", back_populates="asignaciones")
     caja = relationship("Caja", back_populates="asignaciones")
     usuario_creador = relationship("Usuario", back_populates="asignaciones_creadas")
+
+
+class EventoOperativoViaje(Base):
+    __tablename__ = "eventos_operativos_viaje"
+
+    id_evento: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_viaje: Mapped[int] = mapped_column(ForeignKey("viajes.id_viaje"), nullable=False)
+    id_operador: Mapped[int | None] = mapped_column(ForeignKey("operadores.id_operador"), nullable=True)
+    id_trailer: Mapped[int | None] = mapped_column(ForeignKey("trailers.id_trailer"), nullable=True)
+    id_caja: Mapped[int | None] = mapped_column(ForeignKey("cajas.id_caja"), nullable=True)
+    tipo_evento: Mapped[str] = mapped_column(String(50), nullable=False)
+    kilometraje: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    nivel_diesel: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    ubicacion: Mapped[str] = mapped_column(String(255), nullable=False)
+    latitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    longitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    comentario: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    viaje = relationship("Viaje", back_populates="eventos_operativos")
+    operador = relationship("Operador", back_populates="eventos_operativos")
+    trailer = relationship("Trailer", back_populates="eventos_operativos")
+    caja = relationship("Caja", back_populates="eventos_operativos")
+    usuario_creador = relationship("Usuario", back_populates="eventos_operativos_creados")
 
 
 class TransicionEstatusViaje(Base):

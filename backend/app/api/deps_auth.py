@@ -13,6 +13,19 @@ from app.core.security import JWTError, decode_access_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+def normalize_role_name(role_name: str | None) -> str:
+    return (role_name or "").strip().upper()
+
+
+def is_admin_role_name(role_name: str | None) -> bool:
+    normalized = normalize_role_name(role_name)
+    return normalized == "ADMIN" or normalized.startswith("ADMIN_")
+
+
+def is_admin_user(user: Usuario) -> bool:
+    return is_admin_role_name(user.rol.nombre if user.rol else None)
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -46,11 +59,16 @@ def get_current_user(
 
 
 def require_roles(*roles: str) -> Callable[..., Usuario]:
-    allowed_roles = {role.upper() for role in roles}
+    allowed_roles = {normalize_role_name(role) for role in roles}
 
     def dependency(current_user: Usuario = Depends(get_current_user)) -> Usuario:
-        current_role = current_user.rol.nombre.upper()
-        if current_role not in allowed_roles:
+        current_role = normalize_role_name(current_user.rol.nombre)
+        allowed = current_role in allowed_roles
+
+        if not allowed and "ADMIN" in allowed_roles and is_admin_role_name(current_role):
+            allowed = True
+
+        if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permisos para acceder a este recurso",
@@ -67,7 +85,7 @@ require_admin_or_operador = require_roles("ADMIN", "OPERADOR")
 def get_current_operador_or_403(
     current_user: Usuario = Depends(get_current_user),
 ) -> Operador:
-    if current_user.rol.nombre.upper() != "OPERADOR" or current_user.operador is None:
+    if normalize_role_name(current_user.rol.nombre) != "OPERADOR" or current_user.operador is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="El usuario actual no tiene perfil de operador",

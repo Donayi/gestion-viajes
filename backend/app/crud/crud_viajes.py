@@ -1,6 +1,7 @@
 from datetime import date, datetime
+from pathlib import Path
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import and_, or_
 
 from app.models.models import (
@@ -11,6 +12,7 @@ from app.models.models import (
     Cliente,
     Documento,
     Evidencia,
+    EventoOperativoViaje,
     HistorialEstatusViaje,
     Operador,
     Trailer,
@@ -23,6 +25,7 @@ from app.models.models import (
 from app.core.config import settings
 from app.schemas.documento import DocumentoCreate
 from app.schemas.evidencia import ViajeEvidenciaCreate, ViajeEvidenciaUpdate
+from app.schemas.evento_operativo import EventoOperativoViajePayload, TipoEventoOperativo
 from app.schemas.viaje import ViajeAsignacionCreate, ViajeCambioEstatus, ViajeCreate, ViajeUpdate
 
 
@@ -115,7 +118,40 @@ def operador_puede_ver_viaje(db: Session, operador_id: int, viaje_id: int) -> bo
 
 
 def operador_puede_operar_viaje(db: Session, operador_id: int, viaje_id: int) -> bool:
-    return operador_puede_ver_viaje(db, operador_id, viaje_id)
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        return False
+
+    if db_viaje.id_operador_actual == operador_id:
+        return True
+
+    tiene_asignacion_activa = (
+        db.query(AsignacionViaje)
+        .filter(
+            AsignacionViaje.id_viaje == viaje_id,
+            AsignacionViaje.id_operador == operador_id,
+            AsignacionViaje.activo.is_(True),
+        )
+        .first()
+        is not None
+    )
+    if tiene_asignacion_activa:
+        return True
+
+    tuvo_asignacion_historica = (
+        db.query(AsignacionViaje)
+        .filter(
+            AsignacionViaje.id_viaje == viaje_id,
+            AsignacionViaje.id_operador == operador_id,
+        )
+        .first()
+        is not None
+    )
+
+    if not tuvo_asignacion_historica:
+        return False
+
+    return db_viaje.id_operador_actual is None or db_viaje.id_operador_actual == operador_id
 
 
 def get_viajes_enriched(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
@@ -145,6 +181,7 @@ def get_viaje_detail_by_id(db: Session, viaje_id: int) -> Viaje | None:
             joinedload(Viaje.caja_actual),
             joinedload(Viaje.usuario_creador),
             joinedload(Viaje.usuario_actualizador),
+            selectinload(Viaje.eventos_operativos),
         )
         .filter(Viaje.id_viaje == viaje_id)
         .first()
@@ -224,6 +261,42 @@ def get_archivos_storage_prueba(db: Session) -> list[ArchivoStorage]:
         .order_by(ArchivoStorage.id_archivo.asc())
         .all()
     )
+
+
+def create_archivo_storage_upload(
+    db: Session,
+    file_key: str,
+    nombre_original: str,
+    extension: str | None,
+    content_type: str,
+    size_bytes: int | None,
+    subido_por: int | None,
+) -> ArchivoStorage:
+    bucket = settings.r2_bucket
+    if not bucket:
+        raise ValueError("Falta configurar R2_BUCKET")
+
+    nombre_guardado = Path(file_key).name
+    db_archivo = ArchivoStorage(
+        proveedor="CLOUDFLARE_R2",
+        bucket=bucket,
+        file_key=file_key,
+        nombre_original=nombre_original,
+        nombre_guardado=nombre_guardado,
+        extension=extension,
+        content_type=content_type,
+        size_bytes=size_bytes,
+        url_publica=(
+            f"{settings.r2_public_base_url.rstrip('/')}/{file_key}"
+            if settings.r2_public_base_url
+            else None
+        ),
+        subido_por=subido_por,
+    )
+    db.add(db_archivo)
+    db.commit()
+    db.refresh(db_archivo)
+    return db_archivo
 
 
 def get_evidencia_by_id(evidencia_id: int, db: Session) -> Evidencia | None:
@@ -544,6 +617,56 @@ def get_historial_enriched_by_viaje(db: Session, viaje_id: int) -> list[Historia
         .order_by(HistorialEstatusViaje.id_historial.asc())
         .all()
     )
+
+
+def get_eventos_operativos_by_viaje(db: Session, viaje_id: int) -> list[EventoOperativoViaje]:
+    return (
+        db.query(EventoOperativoViaje)
+        .filter(EventoOperativoViaje.id_viaje == viaje_id)
+        .order_by(EventoOperativoViaje.created_at.desc(), EventoOperativoViaje.id_evento.desc())
+        .all()
+    )
+
+
+def _validar_payload_evento_operativo(payload: EventoOperativoViajePayload) -> None:
+    if payload.kilometraje < 0:
+        raise ValueError("El kilometraje debe ser mayor o igual a 0")
+
+    if payload.nivel_diesel < 0 or payload.nivel_diesel > 100:
+        raise ValueError("El nivel de diesel debe estar entre 0 y 100")
+
+    if not payload.ubicacion or not payload.ubicacion.strip():
+        raise ValueError("La ubicacion es obligatoria para esta accion")
+
+    if (payload.latitud is None) != (payload.longitud is None):
+        raise ValueError("Latitud y longitud deben enviarse juntas si se captura geolocalizacion")
+
+
+def _crear_evento_operativo_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    tipo_evento: TipoEventoOperativo,
+    payload: EventoOperativoViajePayload,
+    changed_by: int | None = None,
+) -> EventoOperativoViaje:
+    _validar_payload_evento_operativo(payload)
+
+    db_evento = EventoOperativoViaje(
+        id_viaje=db_viaje.id_viaje,
+        id_operador=db_viaje.id_operador_actual,
+        id_trailer=db_viaje.id_trailer_actual,
+        id_caja=db_viaje.id_caja_actual,
+        tipo_evento=tipo_evento,
+        kilometraje=payload.kilometraje,
+        nivel_diesel=payload.nivel_diesel,
+        ubicacion=payload.ubicacion.strip(),
+        latitud=payload.latitud,
+        longitud=payload.longitud,
+        comentario=payload.comentario,
+        created_by=changed_by,
+    )
+    db.add(db_evento)
+    return db_evento
 
 
 def es_estatus_terminal(db: Session, estatus_id: int) -> bool:
@@ -1110,9 +1233,17 @@ def iniciar_carga_viaje(
 def iniciar_viaje(
     db: Session,
     db_viaje: Viaje,
+    evento_in: EventoOperativoViajePayload,
     changed_by: int | None = None,
     comentario: str | None = None,
 ) -> Viaje:
+    _crear_evento_operativo_viaje(
+        db,
+        db_viaje,
+        "INICIO_VIAJE",
+        evento_in,
+        changed_by=changed_by,
+    )
     return cambiar_estatus_por_clave(
         db,
         db_viaje,
@@ -1140,9 +1271,17 @@ def marcar_retraso_viaje(
 def poner_standby_viaje(
     db: Session,
     db_viaje: Viaje,
+    evento_in: EventoOperativoViajePayload,
     changed_by: int | None = None,
     comentario: str | None = None,
 ) -> Viaje:
+    _crear_evento_operativo_viaje(
+        db,
+        db_viaje,
+        "STANDBY",
+        evento_in,
+        changed_by=changed_by,
+    )
     return cambiar_estatus_por_clave(
         db,
         db_viaje,
@@ -1155,9 +1294,17 @@ def poner_standby_viaje(
 def finalizar_viaje(
     db: Session,
     db_viaje: Viaje,
+    evento_in: EventoOperativoViajePayload,
     changed_by: int | None = None,
     comentario: str | None = None,
 ) -> Viaje:
+    _crear_evento_operativo_viaje(
+        db,
+        db_viaje,
+        "FINALIZACION_VIAJE",
+        evento_in,
+        changed_by=changed_by,
+    )
     return cambiar_estatus_por_clave(
         db,
         db_viaje,

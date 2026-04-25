@@ -1,5 +1,6 @@
 import { apiFetch } from "@/services/api-client";
 import type {
+  EventoOperativoViaje,
   HistorialEstatusEnriched,
   ViajeAsignacionEnriched,
   ViajeDetail,
@@ -24,4 +25,8 @@ export function getViajeAsignacionesRequest(viajeId: number) {
   return apiFetch<ViajeAsignacionEnriched[]>(
     `/viajes/${viajeId}/asignaciones/enriched`
   );
+}
+
+export function getViajeEventosOperativosRequest(viajeId: number) {
+  return apiFetch<EventoOperativoViaje[]>(`/viajes/${viajeId}/eventos-operativos`);
 }

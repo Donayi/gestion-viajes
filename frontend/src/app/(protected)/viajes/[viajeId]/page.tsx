@@ -10,6 +10,7 @@ import { ViajeAsignaciones } from "@/components/viajes/viaje-asignaciones";
 import { ViajeStatusBadge } from "@/components/viajes/viaje-status-badge";
 import { ViajeSummary } from "@/components/viajes/viaje-summary";
 import { ViajeTimeline } from "@/components/viajes/viaje-timeline";
+import { ViajeEventosOperativos } from "@/components/viajes/viaje-eventos-operativos";
 import { WorkflowActions } from "@/components/viajes/workflow-actions";
 import { useSession } from "@/hooks/use-session";
 import { useViajeDetail } from "@/hooks/use-viaje-detail";
@@ -67,6 +68,7 @@ export default function ViajeDetailPage() {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-6">
           <ViajeSummary viaje={detail} />
+          <ViajeEventosOperativos eventos={detail.eventos_operativos} />
           <ViajeTimeline historial={historial} />
           <ViajeAsignaciones asignaciones={asignaciones} />
         </div>

@@ -2,6 +2,8 @@ from datetime import date, datetime, time
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.evento_operativo import EventoOperativoViajeResponse
+
 
 class ClienteResumenResponse(BaseModel):
     id_cliente: int
@@ -109,6 +111,7 @@ class ViajeDetailResponse(BaseModel):
     caja_actual: CajaResumenResponse | None = None
     usuario_creador: UsuarioResumenResponse | None = None
     usuario_actualizador: UsuarioResumenResponse | None = None
+    eventos_operativos: list[EventoOperativoViajeResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,8 +1,10 @@
 import { Card } from "@/components/ui/card";
+import { EvidenciaForm } from "@/components/viajes/evidencia-form";
 import { ViajeAsignaciones } from "@/components/viajes/viaje-asignaciones";
 import { ViajeTimeline } from "@/components/viajes/viaje-timeline";
 import { MobileStatusHeader } from "@/components/viajes/mobile-status-header";
 import { OperatorActionPanel } from "@/components/viajes/operator-action-panel";
+import { ViajeEventosOperativos } from "@/components/viajes/viaje-eventos-operativos";
 import type {
   HistorialEstatusEnriched,
   ViajeAsignacionEnriched,
@@ -70,7 +72,9 @@ export function OperatorTripDetail({
         </div>
       </Card>
 
+      <EvidenciaForm onSuccess={onSuccess} viajeId={detail.id_viaje} />
       <OperatorActionPanel onSuccess={onSuccess} viaje={detail} />
+      <ViajeEventosOperativos eventos={detail.eventos_operativos} />
       <ViajeTimeline historial={historial} />
       <ViajeAsignaciones asignaciones={asignaciones} />
     </div>

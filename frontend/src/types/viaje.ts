@@ -66,6 +66,7 @@ export type ViajeListItem = {
 export type ViajeDetail = ViajeListItem & {
   usuario_creador: UsuarioResumen | null;
   usuario_actualizador: UsuarioResumen | null;
+  eventos_operativos: EventoOperativoViaje[];
 };
 
 export type HistorialEstatusEnriched = {
@@ -101,5 +102,31 @@ export type ViajeAsignacionEnriched = {
 
 export type ViajeComentarioAccion = {
   changed_by?: number | null;
+  comentario?: string | null;
+};
+
+export type EventoOperativoViaje = {
+  id_evento: number;
+  id_viaje: number;
+  id_operador: number | null;
+  id_trailer: number | null;
+  id_caja: number | null;
+  tipo_evento: "INICIO_VIAJE" | "STANDBY" | "FINALIZACION_VIAJE";
+  kilometraje: number;
+  nivel_diesel: number;
+  ubicacion: string;
+  latitud: number | null;
+  longitud: number | null;
+  comentario: string | null;
+  created_by: number | null;
+  created_at: string;
+};
+
+export type WorkflowOperationalPayload = {
+  kilometraje: number;
+  nivel_diesel: number;
+  ubicacion: string;
+  latitud?: number | null;
+  longitud?: number | null;
   comentario?: string | null;
 };

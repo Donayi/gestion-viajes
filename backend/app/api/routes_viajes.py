@@ -1,7 +1,10 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps_auth import require_admin, require_admin_or_operador
+from app.api.deps_auth import is_admin_user, require_admin, require_admin_or_operador
+from app.crud.crud_kpis import get_kpis_operativos_dashboard
 from app.crud.crud_viajes import (
     archivo_storage_exists,
     caja_exists,
@@ -27,6 +30,7 @@ from app.crud.crud_viajes import (
     get_documentos_by_viaje,
     get_evidencia_by_id_and_viaje,
     get_evidencias_by_viaje,
+    get_eventos_operativos_by_viaje,
     get_historial_by_viaje,
     get_historial_enriched_by_viaje,
     get_operadores_disponibles,
@@ -65,6 +69,8 @@ from app.schemas.evidencia import (
     ViajeEvidenciaResponse,
     ViajeEvidenciaUpdate,
 )
+from app.schemas.evento_operativo import EventoOperativoViajePayload, EventoOperativoViajeResponse
+from app.schemas.kpi_operativo import KpiOperativoDashboardResponse, KpiOperativoFilterParams
 from app.schemas.viaje_view import ViajeDetailResponse, ViajeListItemResponse
 from app.schemas.viaje_view import (
     HistorialEstatusViajeEnrichedResponse,
@@ -90,7 +96,7 @@ router = APIRouter(prefix="/viajes", tags=["Viajes"])
 
 
 def _usuario_es_admin(current_user: Usuario) -> bool:
-    return current_user.rol.nombre.upper() == "ADMIN"
+    return is_admin_user(current_user)
 
 
 def _validar_acceso_viaje(
@@ -120,6 +126,10 @@ def _validar_acceso_viaje(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permisos para acceder a este viaje",
         )
+
+
+def _resolve_changed_by(current_user: Usuario, requested_changed_by: int | None) -> int | None:
+    return requested_changed_by or current_user.id_usuario
 
 
 @router.post("/", response_model=ViajeResponse, status_code=status.HTTP_201_CREATED)
@@ -220,6 +230,42 @@ def list_archivos_prueba(
     return get_archivos_storage_prueba(db)
 
 
+@router.get(
+    "/kpis-operativos",
+    response_model=KpiOperativoDashboardResponse,
+)
+def get_kpis_operativos(
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    id_operador: int | None = Query(default=None),
+    id_cliente: int | None = Query(default=None),
+    id_estatus: int | None = Query(default=None),
+    solo_completos: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    filters = KpiOperativoFilterParams(
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        id_operador=(
+            current_user.operador.id_operador
+            if not _usuario_es_admin(current_user) and current_user.operador is not None
+            else id_operador
+        ),
+        id_cliente=id_cliente,
+        id_estatus=id_estatus,
+        solo_completos=solo_completos,
+    )
+
+    if not _usuario_es_admin(current_user) and current_user.operador is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario actual no tiene perfil de operador",
+        )
+
+    return get_kpis_operativos_dashboard(db, filters)
+
+
 @router.get("/{viaje_id}", response_model=ViajeResponse)
 def get_viaje(
     viaje_id: int,
@@ -250,6 +296,26 @@ def get_viaje_detail(
             detail="Viaje no encontrado",
         )
     return db_viaje
+
+
+@router.get(
+    "/{viaje_id}/eventos-operativos",
+    response_model=list[EventoOperativoViajeResponse],
+)
+def list_eventos_operativos_by_viaje(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user)
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    return get_eventos_operativos_by_viaje(db, viaje_id)
 
 
 @router.put("/{viaje_id}", response_model=ViajeResponse)
@@ -1013,7 +1079,7 @@ def iniciar_carga(
         return iniciar_carga_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            changed_by=_resolve_changed_by(current_user, accion_in.changed_by),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1026,7 +1092,7 @@ def iniciar_carga(
 @router.post("/{viaje_id}/iniciar-viaje", response_model=ViajeResponse)
 def iniciar_viaje_endpoint(
     viaje_id: int,
-    accion_in: ViajeComentarioAccion,
+    accion_in: EventoOperativoViajePayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin_or_operador),
 ):
@@ -1042,7 +1108,8 @@ def iniciar_viaje_endpoint(
         return iniciar_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1071,7 +1138,7 @@ def marcar_retraso(
         return marcar_retraso_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            changed_by=_resolve_changed_by(current_user, accion_in.changed_by),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1084,7 +1151,7 @@ def marcar_retraso(
 @router.post("/{viaje_id}/poner-standby", response_model=ViajeResponse)
 def poner_standby(
     viaje_id: int,
-    accion_in: ViajeComentarioAccion,
+    accion_in: EventoOperativoViajePayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin_or_operador),
 ):
@@ -1100,7 +1167,8 @@ def poner_standby(
         return poner_standby_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1163,7 +1231,7 @@ def reasignar(
 @router.post("/{viaje_id}/finalizar", response_model=ViajeResponse)
 def finalizar(
     viaje_id: int,
-    accion_in: ViajeComentarioAccion,
+    accion_in: EventoOperativoViajePayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin_or_operador),
 ):
@@ -1179,7 +1247,8 @@ def finalizar(
         return finalizar_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1207,7 +1276,7 @@ def cancelar(
         return cancelar_viaje(
             db,
             db_viaje,
-            changed_by=accion_in.changed_by,
+            changed_by=_resolve_changed_by(current_user, accion_in.changed_by),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
