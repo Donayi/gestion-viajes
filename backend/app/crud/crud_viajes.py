@@ -1093,6 +1093,7 @@ def _crear_evento_y_evidencias_operativas(
             db_evento,
             payload.evidencias,
         )
+        db.flush()
 
     return db_evento
 
@@ -1158,16 +1159,40 @@ def _viaje_tiene_evidencias_validas(db: Session, viaje_id: int) -> bool:
     )
 
 
+def _payload_tiene_evidencias_validas(
+    db: Session,
+    evidencias_en_payload: list[EvidenciaOperativaInput] | None,
+) -> bool:
+    if not evidencias_en_payload:
+        return False
+
+    evidencia_valida = False
+    for evidencia_in in evidencias_en_payload:
+        if not tipo_evidencia_exists(db, evidencia_in.id_tipo_evidencia):
+            raise ValueError("El tipo de evidencia especificado no existe")
+
+        if not archivo_storage_exists(db, evidencia_in.id_archivo):
+            raise ValueError("El archivo especificado no existe")
+
+        evidencia_valida = True
+
+    return evidencia_valida
+
+
 def _validar_requisitos_evidencia_transicion(
     db: Session,
     db_viaje: Viaje,
     transicion: TransicionEstatusViaje,
     estatus_destino: CatalogoEstatusViaje,
+    evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
 ) -> None:
     if not transicion.requiere_evidencia:
         return
 
-    tiene_evidencias_validas = _viaje_tiene_evidencias_validas(db, db_viaje.id_viaje)
+    tiene_evidencias_validas = _viaje_tiene_evidencias_validas(db, db_viaje.id_viaje) or _payload_tiene_evidencias_validas(
+        db,
+        evidencias_en_payload,
+    )
 
     if estatus_destino.clave == "INICIADO":
         if not tiene_evidencias_validas:
@@ -1768,6 +1793,7 @@ def cambiar_estatus_viaje(
     db: Session,
     db_viaje: Viaje,
     cambio_in: ViajeCambioEstatus,
+    evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
 ) -> Viaje:
     validar_viaje_no_terminal_para_mutacion(db_viaje)
     estatus_actual = get_estatus_by_id(db, db_viaje.id_estatus_actual)
@@ -1792,6 +1818,7 @@ def cambiar_estatus_viaje(
         db_viaje,
         transicion,
         estatus_destino,
+        evidencias_en_payload=evidencias_en_payload,
     )
 
     asignacion_activa = get_asignacion_activa_by_viaje(db, db_viaje.id_viaje)
@@ -1867,6 +1894,7 @@ def cambiar_estatus_por_clave(
     clave_destino: str,
     changed_by: int | None = None,
     comentario: str | None = None,
+    evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
 ) -> Viaje:
     estatus_destino = get_estatus_by_clave(db, clave_destino)
     if not estatus_destino:
@@ -1877,7 +1905,12 @@ def cambiar_estatus_por_clave(
         changed_by=changed_by,
         comentario=comentario,
     )
-    return cambiar_estatus_viaje(db, db_viaje, cambio)
+    return cambiar_estatus_viaje(
+        db,
+        db_viaje,
+        cambio,
+        evidencias_en_payload=evidencias_en_payload,
+    )
 
 
 def iniciar_carga_viaje(
@@ -1939,6 +1972,7 @@ def iniciar_viaje(
         "INICIADO",
         changed_by=changed_by,
         comentario=comentario or "Viaje iniciado",
+        evidencias_en_payload=evento_in.evidencias,
     )
 
 
@@ -2164,6 +2198,7 @@ def finalizar_viaje(
         "FINALIZADO",
         changed_by=changed_by,
         comentario=comentario or "Viaje finalizado",
+        evidencias_en_payload=evento_in.evidencias,
     )
 
 
