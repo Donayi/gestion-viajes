@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -55,12 +56,25 @@ class UsuarioResumenResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UltimaUbicacionViajeMapaResponse(BaseModel):
+    latitud: float | None = None
+    longitud: float | None = None
+    ubicacion: str | None = None
+    tipo_evento: str | None = None
+    created_at: datetime | None = None
+
+
 class ViajeListItemResponse(BaseModel):
     id_viaje: int
     folio: str
+    folio_viaje_cliente: str | None = None
     id_cliente: int
     lugar_inicio: str
     lugar_destino: str
+    lugar_inicio_latitud: Decimal | None = None
+    lugar_inicio_longitud: Decimal | None = None
+    lugar_destino_latitud: Decimal | None = None
+    lugar_destino_longitud: Decimal | None = None
     tipo_carga: str | None = None
     descripcion_carga: str | None = None
     id_estatus_actual: int
@@ -68,10 +82,15 @@ class ViajeListItemResponse(BaseModel):
     id_trailer_actual: int | None = None
     id_caja_actual: int | None = None
     fecha_programada_salida: datetime | None = None
+    fecha_carga: date | None = None
+    hora_carga: time | None = None
+    fecha_descarga: date | None = None
+    hora_descarga: time | None = None
     fecha_inicio: datetime | None = None
     fecha_llegada: datetime | None = None
     fecha_entrega: date | None = None
     hora_entrega: time | None = None
+    hora_cita_descarga: time | None = None
     observaciones: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -87,9 +106,14 @@ class ViajeListItemResponse(BaseModel):
 class ViajeDetailResponse(BaseModel):
     id_viaje: int
     folio: str
+    folio_viaje_cliente: str | None = None
     id_cliente: int
     lugar_inicio: str
     lugar_destino: str
+    lugar_inicio_latitud: Decimal | None = None
+    lugar_inicio_longitud: Decimal | None = None
+    lugar_destino_latitud: Decimal | None = None
+    lugar_destino_longitud: Decimal | None = None
     tipo_carga: str | None = None
     descripcion_carga: str | None = None
     id_estatus_actual: int
@@ -97,10 +121,15 @@ class ViajeDetailResponse(BaseModel):
     id_trailer_actual: int | None = None
     id_caja_actual: int | None = None
     fecha_programada_salida: datetime | None = None
+    fecha_carga: date | None = None
+    hora_carga: time | None = None
+    fecha_descarga: date | None = None
+    hora_descarga: time | None = None
     fecha_inicio: datetime | None = None
     fecha_llegada: datetime | None = None
     fecha_entrega: date | None = None
     hora_entrega: time | None = None
+    hora_cita_descarga: time | None = None
     observaciones: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -111,6 +140,8 @@ class ViajeDetailResponse(BaseModel):
     caja_actual: CajaResumenResponse | None = None
     usuario_creador: UsuarioResumenResponse | None = None
     usuario_actualizador: UsuarioResumenResponse | None = None
+    solicitud_standby_pendiente: bool = False
+    requiere_reinicio_viaje: bool = False
     eventos_operativos: list[EventoOperativoViajeResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -149,3 +180,25 @@ class ViajeAsignacionEnrichedResponse(BaseModel):
     usuario_creador: UsuarioResumenResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ViajeMapaItemResponse(BaseModel):
+    id_viaje: int
+    folio: str
+    folio_viaje_cliente: str | None = None
+    cliente: ClienteResumenResponse
+    estatus_actual: EstatusViajeResumenResponse
+    operador_actual: OperadorResumenResponse | None = None
+    trailer_actual: TrailerResumenResponse | None = None
+    caja_actual: CajaResumenResponse | None = None
+    lugar_inicio: str
+    lugar_destino: str
+    lugar_inicio_latitud: float | None = None
+    lugar_inicio_longitud: float | None = None
+    lugar_destino_latitud: float | None = None
+    lugar_destino_longitud: float | None = None
+    ultima_ubicacion: UltimaUbicacionViajeMapaResponse | None = None
+    fecha_carga: date | None = None
+    hora_carga: time | None = None
+    fecha_descarga: date | None = None
+    hora_descarga: time | None = None

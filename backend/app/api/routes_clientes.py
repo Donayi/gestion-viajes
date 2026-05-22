@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 from app.crud.crud_clientes import (
     create_cliente,
@@ -19,7 +21,11 @@ router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
 
 @router.post("/", response_model=ClienteResponse, status_code=status.HTTP_201_CREATED)
-def create_new_cliente(cliente_in: ClienteCreate, db: Session = Depends(get_db)):
+def create_new_cliente(
+    cliente_in: ClienteCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return create_cliente(db, cliente_in)
 
 
@@ -44,6 +50,7 @@ def update_existing_cliente(
     cliente_id: int,
     cliente_in: ClienteUpdate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_cliente = get_cliente_by_id(db, cliente_id)
     if not db_cliente:
@@ -56,7 +63,11 @@ def update_existing_cliente(
 
 
 @router.delete("/{cliente_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_existing_cliente(cliente_id: int, db: Session = Depends(get_db)):
+def delete_existing_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_cliente = get_cliente_by_id(db, cliente_id)
     if not db_cliente:
         raise HTTPException(
@@ -64,5 +75,12 @@ def delete_existing_cliente(cliente_id: int, db: Session = Depends(get_db)):
             detail="Cliente no encontrado",
         )
 
-    delete_cliente(db, db_cliente)
+    try:
+        delete_cliente(db, db_cliente)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar el cliente porque está ligado a viajes existentes",
+        ) from exc
     return None

@@ -6,6 +6,9 @@ class OperadorBase(BaseModel):
     id_usuario: int
     alias: str
     numero_licencia: str | None = None
+    rfc: str | None = None
+    curp: str | None = None
+    numero_expediente_medico: str | None = None
     licencia_vigencia: date | None = None
     sua: str | None = None
     sua_vigencia: date | None = None
@@ -21,6 +24,9 @@ class OperadorUpdate(BaseModel):
     id_usuario: int | None = None
     alias: str | None = None
     numero_licencia: str | None = None
+    rfc: str | None = None
+    curp: str | None = None
+    numero_expediente_medico: str | None = None
     licencia_vigencia: date | None = None
     sua: str | None = None
     sua_vigencia: date | None = None

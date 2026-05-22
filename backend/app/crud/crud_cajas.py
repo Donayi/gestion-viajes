@@ -31,6 +31,7 @@ def create_caja(db: Session, caja_in: CajaCreate) -> Caja:
         seguro_vigencia=caja_in.seguro_vigencia,
         tarjeta_circulacion=caja_in.tarjeta_circulacion,
         tarjeta_vigencia=caja_in.tarjeta_vigencia,
+        numero_serie=caja_in.numero_serie,
         verificacion=caja_in.verificacion,
         verificacion_vigencia=caja_in.verificacion_vigencia,
         activo=caja_in.activo,

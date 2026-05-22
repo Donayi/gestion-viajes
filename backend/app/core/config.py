@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     r2_endpoint_url: str | None = None
     r2_public_base_url: str | None = None
     r2_presign_expiration_seconds: int = 900
+    telegram_enabled: bool = False
+    telegram_bot_token: str | None = None
+    telegram_default_chat_id: str | None = None
+    app_public_url: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -21,6 +21,10 @@ export function ViajeSummary({ viaje }: { viaje: ViajeDetail }) {
         <Item label="Tipo de carga" value={viaje.tipo_carga ?? "Sin dato"} />
         <Item label="Descripcion" value={viaje.descripcion_carga ?? "Sin dato"} />
         <Item label="Salida programada" value={formatDateTime(viaje.fecha_programada_salida)} />
+        <Item label="Fecha de carga" value={formatDate(viaje.fecha_carga)} />
+        <Item label="Hora de carga" value={viaje.hora_carga ?? "Sin dato"} />
+        <Item label="Fecha de descarga" value={formatDate(viaje.fecha_descarga)} />
+        <Item label="Hora de descarga" value={viaje.hora_descarga ?? "Sin dato"} />
         <Item label="Fecha de inicio" value={formatDateTime(viaje.fecha_inicio)} />
         <Item label="Fecha de llegada" value={formatDateTime(viaje.fecha_llegada)} />
         <Item label="Fecha de entrega" value={formatDate(viaje.fecha_entrega)} />

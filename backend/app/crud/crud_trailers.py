@@ -30,6 +30,8 @@ def create_trailer(db: Session, trailer_in: TrailerCreate) -> Trailer:
         seguro_vigencia=trailer_in.seguro_vigencia,
         tarjeta_circulacion=trailer_in.tarjeta_circulacion,
         tarjeta_vigencia=trailer_in.tarjeta_vigencia,
+        permiso_circulacion=trailer_in.permiso_circulacion,
+        numero_serie=trailer_in.numero_serie,
         verificacion=trailer_in.verificacion,
         verificacion_vigencia=trailer_in.verificacion_vigencia,
         activo=trailer_in.activo,

@@ -44,3 +44,7 @@ export function createEvidenciaRequest(viajeId: number, payload: CreateEvidencia
     }
   });
 }
+
+export function getEvidenciasByViajeRequest(viajeId: number) {
+  return apiFetch<EvidenciaResponse[]>(`/viajes/${viajeId}/evidencias`);
+}

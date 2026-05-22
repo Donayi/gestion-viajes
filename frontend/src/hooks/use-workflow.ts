@@ -4,26 +4,35 @@ import { useState } from "react";
 
 import { ApiError } from "@/services/api-client";
 import {
+  autorizarStandbyRequest,
   finalizarViajeRequest,
   iniciarCargaRequest,
   iniciarViajeRequest,
   marcarRetrasoRequest,
-  ponerStandbyRequest
+  ponerStandbyRequest,
+  reiniciarViajeRequest,
+  solicitarStandbyRequest
 } from "@/services/workflow.service";
-import type { ViajeComentarioAccion, WorkflowOperationalPayload } from "@/types/viaje";
+import type { WorkflowActionPayload } from "@/types/viaje";
 
 type ActionType =
   | "iniciar-carga"
   | "iniciar-viaje"
+  | "reiniciar-viaje"
   | "marcar-retraso"
   | "poner-standby"
+  | "solicitar-standby"
+  | "autorizar-standby"
   | "finalizar";
 
 const actionMap = {
   "iniciar-carga": iniciarCargaRequest,
   "iniciar-viaje": iniciarViajeRequest,
+  "reiniciar-viaje": reiniciarViajeRequest,
   "marcar-retraso": marcarRetrasoRequest,
   "poner-standby": ponerStandbyRequest,
+  "solicitar-standby": solicitarStandbyRequest,
+  "autorizar-standby": autorizarStandbyRequest,
   finalizar: finalizarViajeRequest
 } as const;
 
@@ -33,7 +42,7 @@ export function useWorkflow(viajeId: number, onSuccess: () => Promise<void> | vo
 
   async function runAction(
     action: ActionType,
-    payload: ViajeComentarioAccion | WorkflowOperationalPayload
+    payload?: WorkflowActionPayload
   ) {
     setLoadingAction(action);
     setError(null);
@@ -41,7 +50,7 @@ export function useWorkflow(viajeId: number, onSuccess: () => Promise<void> | vo
     try {
       const request = actionMap[action] as (
         currentViajeId: number,
-        currentPayload: ViajeComentarioAccion | WorkflowOperationalPayload
+        currentPayload?: WorkflowActionPayload
       ) => Promise<unknown>;
       await request(viajeId, payload);
       await onSuccess();

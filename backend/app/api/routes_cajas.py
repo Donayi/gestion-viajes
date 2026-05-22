@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 from app.crud.crud_cajas import (
     create_caja,
@@ -21,7 +23,11 @@ router = APIRouter(prefix="/cajas", tags=["Cajas"])
 
 
 @router.post("/", response_model=CajaResponse, status_code=status.HTTP_201_CREATED)
-def create_new_caja(caja_in: CajaCreate, db: Session = Depends(get_db)):
+def create_new_caja(
+    caja_in: CajaCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     if caja_in.numero_economico is not None:
         existing_numero = get_caja_by_numero_economico(db, caja_in.numero_economico)
         if existing_numero:
@@ -61,6 +67,7 @@ def update_existing_caja(
     caja_id: int,
     caja_in: CajaUpdate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_caja = get_caja_by_id(db, caja_id)
     if not db_caja:
@@ -89,7 +96,11 @@ def update_existing_caja(
 
 
 @router.delete("/{caja_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_existing_caja(caja_id: int, db: Session = Depends(get_db)):
+def delete_existing_caja(
+    caja_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_caja = get_caja_by_id(db, caja_id)
     if not db_caja:
         raise HTTPException(
@@ -97,5 +108,12 @@ def delete_existing_caja(caja_id: int, db: Session = Depends(get_db)):
             detail="Caja no encontrada",
         )
 
-    delete_caja(db, db_caja)
+    try:
+        delete_caja(db, db_caja)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar la caja porque está ligada a viajes existentes",
+        ) from exc
     return None

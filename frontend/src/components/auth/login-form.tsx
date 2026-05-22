@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { useSession } from "@/hooks/use-session";
 
 export function LoginForm() {
-  const router = useRouter();
   const { login } = useSession();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +21,6 @@ export function LoginForm() {
 
     try {
       await login(username, password);
-      router.replace("/dashboard");
     } catch (error) {
       setError(error instanceof Error ? error.message : "No fue posible iniciar sesion");
     } finally {
@@ -32,14 +29,12 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-md p-8">
+    <Card className="w-full max-w-md border-white/10 bg-white/96 p-8 shadow-2xl shadow-slate-950/20 backdrop-blur">
       <div className="mb-8">
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand-700">
-          Gestion de Viajes
-        </p>
+        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand-700">Acceso seguro</p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-950">Inicia sesion</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Entra con tu usuario del backend para consultar y operar viajes.
+          Entra con tu usuario para consultar y operar dentro de DAFREQ.
         </p>
       </div>
 

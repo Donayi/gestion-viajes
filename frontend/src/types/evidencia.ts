@@ -17,6 +17,7 @@ export type PresignUploadResponse = {
 };
 
 export type CreateEvidenciaPayload = {
+  id_evento_operativo?: number | null;
   id_tipo_evidencia: number;
   id_archivo: number;
   id_operador?: number | null;
@@ -28,6 +29,7 @@ export type CreateEvidenciaPayload = {
 export type EvidenciaResponse = {
   id_evidencia: number;
   id_viaje: number;
+  id_evento_operativo: number | null;
   id_tipo_evidencia: number;
   id_operador: number | null;
   id_archivo: number;
@@ -36,4 +38,13 @@ export type EvidenciaResponse = {
   latitud: number | null;
   longitud: number | null;
   created_at: string;
+  archivo: {
+    id_archivo: number;
+    file_key: string | null;
+    nombre_original: string | null;
+    nombre_guardado: string | null;
+    extension: string | null;
+    content_type: string | null;
+    url_publica: string | null;
+  } | null;
 };

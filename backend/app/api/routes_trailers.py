@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 from app.crud.crud_trailers import (
     create_trailer,
@@ -21,7 +23,11 @@ router = APIRouter(prefix="/trailers", tags=["Trailers"])
 
 
 @router.post("/", response_model=TrailerResponse, status_code=status.HTTP_201_CREATED)
-def create_new_trailer(trailer_in: TrailerCreate, db: Session = Depends(get_db)):
+def create_new_trailer(
+    trailer_in: TrailerCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     existing_numero = get_trailer_by_numero_economico(db, trailer_in.numero_economico)
     if existing_numero:
         raise HTTPException(
@@ -60,6 +66,7 @@ def update_existing_trailer(
     trailer_id: int,
     trailer_in: TrailerUpdate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_trailer = get_trailer_by_id(db, trailer_id)
     if not db_trailer:
@@ -88,7 +95,11 @@ def update_existing_trailer(
 
 
 @router.delete("/{trailer_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_existing_trailer(trailer_id: int, db: Session = Depends(get_db)):
+def delete_existing_trailer(
+    trailer_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_trailer = get_trailer_by_id(db, trailer_id)
     if not db_trailer:
         raise HTTPException(
@@ -96,5 +107,12 @@ def delete_existing_trailer(trailer_id: int, db: Session = Depends(get_db)):
             detail="Trailer no encontrado",
         )
 
-    delete_trailer(db, db_trailer)
+    try:
+        delete_trailer(db, db_trailer)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar el tráiler porque está ligado a viajes existentes",
+        ) from exc
     return None

@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card";
-import { EvidenciaForm } from "@/components/viajes/evidencia-form";
 import { ViajeAsignaciones } from "@/components/viajes/viaje-asignaciones";
+import { ViajeRouteMap } from "@/components/viajes/viaje-route-map";
 import { ViajeTimeline } from "@/components/viajes/viaje-timeline";
 import { MobileStatusHeader } from "@/components/viajes/mobile-status-header";
 import { OperatorActionPanel } from "@/components/viajes/operator-action-panel";
@@ -60,6 +60,19 @@ export function OperatorTripDetail({
         </div>
       </Card>
 
+      <ViajeRouteMap
+        destino={{
+          direccion: detail.lugar_destino,
+          latitud: detail.lugar_destino_latitud,
+          longitud: detail.lugar_destino_longitud,
+        }}
+        origen={{
+          direccion: detail.lugar_inicio,
+          latitud: detail.lugar_inicio_latitud,
+          longitud: detail.lugar_inicio_longitud,
+        }}
+      />
+
       <Card className="rounded-[2rem] p-5">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-700">Recursos</p>
         <div className="mt-4 grid gap-3">
@@ -72,9 +85,8 @@ export function OperatorTripDetail({
         </div>
       </Card>
 
-      <EvidenciaForm onSuccess={onSuccess} viajeId={detail.id_viaje} />
       <OperatorActionPanel onSuccess={onSuccess} viaje={detail} />
-      <ViajeEventosOperativos eventos={detail.eventos_operativos} />
+      <ViajeEventosOperativos eventos={detail.eventos_operativos} onCorrected={onSuccess} viajeId={detail.id_viaje} />
       <ViajeTimeline historial={historial} />
       <ViajeAsignaciones asignaciones={asignaciones} />
     </div>

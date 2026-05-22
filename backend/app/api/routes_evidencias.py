@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps_auth import require_admin_or_operador
+from app.api.deps_auth import require_admin_or_operador_or_mantenimiento
 from app.core.storage_r2 import build_evidencia_file_key, generate_presigned_upload_url
 from app.crud.crud_viajes import create_archivo_storage_upload
 from app.db.deps import get_db
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/evidencias", tags=["Evidencias"])
 def presign_upload_evidencia(
     upload_in: PresignUploadRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_admin_or_operador),
+    current_user: Usuario = Depends(require_admin_or_operador_or_mantenimiento),
 ):
     try:
         file_key = build_evidencia_file_key(upload_in.filename)

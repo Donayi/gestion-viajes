@@ -86,6 +86,7 @@ TRANSICIONES_INICIALES = [
     ("INICIADO", "RETRASADO", True, False),
     ("RETRASADO", "INICIADO", True, False),
     ("INICIADO", "STANDBY", True, False),
+    ("RETRASADO", "STANDBY", True, False),
     ("STANDBY", "ASIGNADO", True, False),
     ("STANDBY", "CARGANDO", True, False),
     ("INICIADO", "FINALIZADO", False, True),

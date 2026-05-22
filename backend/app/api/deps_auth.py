@@ -22,8 +22,16 @@ def is_admin_role_name(role_name: str | None) -> bool:
     return normalized == "ADMIN" or normalized.startswith("ADMIN_")
 
 
+def is_mantenimiento_role_name(role_name: str | None) -> bool:
+    return normalize_role_name(role_name) == "MANTENIMIENTO"
+
+
 def is_admin_user(user: Usuario) -> bool:
     return is_admin_role_name(user.rol.nombre if user.rol else None)
+
+
+def is_mantenimiento_user(user: Usuario) -> bool:
+    return is_mantenimiento_role_name(user.rol.nombre if user.rol else None)
 
 
 def get_current_user(
@@ -80,6 +88,9 @@ def require_roles(*roles: str) -> Callable[..., Usuario]:
 
 require_admin = require_roles("ADMIN")
 require_admin_or_operador = require_roles("ADMIN", "OPERADOR")
+require_mantenimiento = require_roles("MANTENIMIENTO")
+require_admin_or_mantenimiento = require_roles("ADMIN", "MANTENIMIENTO")
+require_admin_or_operador_or_mantenimiento = require_roles("ADMIN", "OPERADOR", "MANTENIMIENTO")
 
 
 def get_current_operador_or_403(

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 from app.crud.crud_operadores import (
     create_operador,
@@ -21,7 +23,11 @@ router = APIRouter(prefix="/operadores", tags=["Operadores"])
 
 
 @router.post("/", response_model=OperadorResponse, status_code=status.HTTP_201_CREATED)
-def create_new_operador(operador_in: OperadorCreate, db: Session = Depends(get_db)):
+def create_new_operador(
+    operador_in: OperadorCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     if not user_exists(db, operador_in.id_usuario):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,6 +65,7 @@ def update_existing_operador(
     operador_id: int,
     operador_in: OperadorUpdate,
     db: Session = Depends(get_db),
+    _=Depends(require_admin),
 ):
     db_operador = get_operador_by_id(db, operador_id)
     if not db_operador:
@@ -85,7 +92,11 @@ def update_existing_operador(
 
 
 @router.delete("/{operador_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_existing_operador(operador_id: int, db: Session = Depends(get_db)):
+def delete_existing_operador(
+    operador_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_operador = get_operador_by_id(db, operador_id)
     if not db_operador:
         raise HTTPException(
@@ -93,5 +104,12 @@ def delete_existing_operador(operador_id: int, db: Session = Depends(get_db)):
             detail="Operador no encontrado",
         )
 
-    delete_operador(db, db_operador)
+    try:
+        delete_operador(db, db_operador)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede eliminar el operador porque está ligado a viajes existentes",
+        ) from exc
     return None

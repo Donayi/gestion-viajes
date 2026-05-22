@@ -1,9 +1,13 @@
 from pathlib import Path
 from uuid import uuid4
+import logging
 
 import boto3
 
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_endpoint_url() -> str:
@@ -60,3 +64,17 @@ def generate_presigned_upload_url(file_key: str, content_type: str) -> str:
         },
         ExpiresIn=settings.r2_presign_expiration_seconds,
     )
+
+
+def build_public_file_url(file_key: str | None) -> str | None:
+    if not file_key:
+        return None
+
+    if not settings.r2_public_base_url:
+        logger.warning(
+            "R2_PUBLIC_BASE_URL no está configurado; no fue posible construir URL pública para file_key=%s",
+            file_key,
+        )
+        return None
+
+    return f"{settings.r2_public_base_url.rstrip('/')}/{file_key.lstrip('/')}"

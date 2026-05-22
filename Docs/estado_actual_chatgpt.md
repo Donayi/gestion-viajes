@@ -245,24 +245,53 @@ Propósito:
 
 Tipos de evento actuales:
 
+* `INICIO_CARGA`
 * `INICIO_VIAJE`
+* `RETRASO`
 * `STANDBY`
 * `FINALIZACION_VIAJE`
 
 Endpoints afectados:
 
+* `POST /viajes/{id}/iniciar-carga`
 * `POST /viajes/{id}/iniciar-viaje`
+* `POST /viajes/{id}/marcar-retraso`
 * `POST /viajes/{id}/poner-standby`
 * `POST /viajes/{id}/finalizar`
 
-Payload obligatorio en esas acciones:
+Payload por acción:
 
+* `iniciar-carga`
+  * `ubicacion`
+  * `latitud` opcional
+  * `longitud` opcional
+  * `comentario` opcional
+* `iniciar-viaje`
 * `kilometraje`
 * `nivel_diesel`
 * `ubicacion`
 * `latitud` opcional
 * `longitud` opcional
 * `comentario` opcional
+* `marcar-retraso`
+  * `ubicacion`
+  * `latitud` opcional
+  * `longitud` opcional
+  * `comentario` obligatorio
+* `poner-standby`
+  * `kilometraje`
+  * `nivel_diesel`
+  * `ubicacion`
+  * `latitud` opcional
+  * `longitud` opcional
+  * `comentario` obligatorio
+* `finalizar`
+  * `kilometraje`
+  * `nivel_diesel`
+  * `ubicacion`
+  * `latitud` opcional
+  * `longitud` opcional
+  * `comentario` opcional
 
 Validaciones:
 
@@ -271,6 +300,7 @@ Validaciones:
 * `ubicacion` obligatoria y no vacía
 * si se envía `latitud`, también debe enviarse `longitud`
 * si se envía `longitud`, también debe enviarse `latitud`
+* `comentario` obligatorio para `marcar-retraso`
 
 Lectura:
 
@@ -279,8 +309,10 @@ Lectura:
 
 Frontend:
 
-* el panel móvil del operador abre una captura tipo bottom-sheet antes de `iniciar viaje`, `standby` y `finalizar`
+* el panel móvil del operador abre una captura tipo bottom-sheet antes de las 5 acciones operativas
 * permite usar ubicación actual del navegador si está disponible
+* valida inline antes de enviar
+* muestra loading, éxito y errores del backend
 
 ### Dashboard de KPIs operativos
 
@@ -346,6 +378,101 @@ Frontend:
 * cards resumen en tonos azules
 * barra de filtros
 * tabla ejecutiva por viaje
+
+### Módulo ADMIN frontend
+
+Se agregó el módulo administrativo de catálogos operativos en frontend.
+
+Rutas:
+
+* `/admin/viajes/nuevo`
+* `/admin/roles`
+* `/admin/usuarios`
+* `/admin/operadores`
+* `/admin/clientes`
+* `/admin/trailers`
+* `/admin/cajas`
+* `/admin/evidencias`
+* `/admin/documentos`
+* `/admin/perfil`
+
+Navegación:
+
+* el sidebar de `ADMIN` ahora muestra sección `Administración`
+* incluye:
+  * `Inicio`
+  * `KPIs operativos`
+  * `Viajes`
+  * `Nuevo viaje`
+  * `Roles`
+  * `Usuarios`
+  * `Operadores`
+  * `Clientes`
+  * `Tráilers`
+  * `Cajas`
+  * `Evidencias`
+  * `Documentos`
+  * `Perfil`
+
+Comportamiento visual:
+
+* sidebar oscuro con iconos `lucide-react`
+* estados activos e hover en tonos azules
+* `ADMIN` ve el menú completo
+* `OPERADOR` no ve navegación administrativa
+* `OPERADOR` mantiene bottom navigation mobile-first
+
+Flujo de viajes desde frontend:
+
+* `ADMIN` ya puede crear viajes desde `/admin/viajes/nuevo`
+* después de crear el viaje, la app habilita asignación inmediata usando:
+  * operador disponible
+  * tráiler disponible
+  * caja disponible opcional
+* al terminar la asignación, redirige al detalle del viaje
+
+Permisos:
+
+* solo `ADMIN` puede usar el módulo desde la app
+* si `OPERADOR` intenta entrar a `/admin/*`, se muestra acceso restringido
+
+Fases funcionales implementadas:
+
+* listado de roles
+* alta de roles
+* listado de usuarios
+* alta de usuarios
+* listado de operadores
+* alta de operadores
+* listado de clientes
+* alta de clientes
+* listado de tráilers
+* alta de tráilers
+* listado de cajas
+* alta de cajas
+* captura extendida en alta de operadores:
+  * `RFC`
+  * `CURP`
+  * `número de expediente médico`
+* captura extendida en alta de tráilers:
+  * `permiso de circulación`
+  * `número de serie`
+  * `vigencia de tarjeta` retirada del frontend
+* captura ajustada en alta de cajas:
+  * `número de serie`
+  * `modelo` mostrado como `Tamaño`
+  * `póliza`, `vigencia seguro` y `vigencia de tarjeta` retiradas del frontend
+* alta de viajes extendida:
+  * `folio viaje cliente`
+  * `hora cita descarga`
+
+UX:
+
+* tablas modernas
+* botón crear
+* modal de captura
+* mensajes de error del backend
+* estados loading y empty
 
 ### Validación documental estricta implementada
 

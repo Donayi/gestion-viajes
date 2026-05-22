@@ -204,13 +204,25 @@ Se calcula dinámicamente (NO se guarda en tablas):
   * valida documentos solo de los recursos actuales aún ligados al viaje, sin bloquear por recursos ausentes
 * Existe tabla `eventos_operativos_viaje` para capturar snapshots operativos del flujo
 * Los endpoints `iniciar-viaje`, `poner-standby` y `finalizar` ahora capturan:
+* Los endpoints `iniciar-carga`, `iniciar-viaje`, `marcar-retraso`, `poner-standby` y `finalizar` ahora capturan datos operativos previos al cambio de estatus
+* `iniciar-carga` exige:
+  * ubicacion
+  * latitud / longitud opcionales
+  * comentario opcional
+* `marcar-retraso` exige:
+  * ubicacion
+  * latitud / longitud opcionales
+  * comentario obligatorio
+* `iniciar-viaje`, `poner-standby` y `finalizar` capturan:
   * kilometraje
   * nivel_diesel
   * ubicacion
   * latitud / longitud opcionales
   * comentario opcional
 * Los tipos de evento operativos son:
+  * `INICIO_CARGA`
   * `INICIO_VIAJE`
+  * `RETRASO`
   * `STANDBY`
   * `FINALIZACION_VIAJE`
 * `GET /viajes/{id}/detail` incluye `eventos_operativos`
@@ -254,9 +266,47 @@ Se calcula dinámicamente (NO se guarda en tablas):
 * Layout protegido bajo `/dashboard` y `/viajes`
 * Dashboard con métricas simples
 * Página nueva `/dashboard/kpis` con dashboard ejecutivo de KPIs operativos
+* Módulo ADMIN frontend:
+  * `/admin/viajes/nuevo`
+  * `/admin/roles`
+  * `/admin/usuarios`
+  * `/admin/operadores`
+  * `/admin/clientes`
+  * `/admin/trailers`
+  * `/admin/cajas`
+  * `/admin/evidencias` placeholder
+  * `/admin/documentos` placeholder
+  * `/admin/perfil` placeholder
+* Catálogos operativos implementados:
+  * listado
+  * botón crear
+  * formulario modal
+  * estados loading / vacío / error
+* Flujo ADMIN para viajes:
+  * creación de viaje desde `/admin/viajes/nuevo`
+  * asignación inmediata a operador, tráiler y caja
+  * redirección al detalle del viaje creado
+* Ajustes recientes de campos administrativos:
+  * `Operadores`: ahora captura `RFC`, `CURP` y `número de expediente médico`
+  * `Tráilers`: agrega `permiso de circulación` y `número de serie`; `vigencia de tarjeta` se oculta del frontend
+  * `Cajas`: agrega `número de serie`; `modelo` se presenta visualmente como `Tamaño`
+  * `Viajes`: agrega `folio viaje cliente` y `hora cita descarga` en alta
+* El sidebar de `ADMIN` ahora es operacional y muestra secciones con iconos:
+  * `Dashboard`
+  * `Operación`
+  * `Administración`
+  * `Documentación`
+  * `Sistema`
+* Si `OPERADOR` intenta entrar a `/admin/*`, la app muestra acceso restringido
 * Lista de viajes con:
   * tabla desktop para `ADMIN`
   * cards mobile-first para `OPERADOR`
+* `OPERADOR` mantiene navegación móvil inferior sin menú administrativo
+* El panel móvil del operador:
+  * abre drawer previo para las 5 acciones del workflow operativo
+  * valida inline antes de enviar
+  * permite usar ubicación actual
+  * mantiene confirmación para `STANDBY` y `FINALIZADO`
 * Detalle de viaje con:
   * resumen
   * historial enriquecido

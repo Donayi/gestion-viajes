@@ -13,6 +13,7 @@ class CajaBase(BaseModel):
     seguro_vigencia: date | None = None
     tarjeta_circulacion: str | None = None
     tarjeta_vigencia: date | None = None
+    numero_serie: str | None = None
     verificacion: str | None = None
     verificacion_vigencia: date | None = None
     activo: bool = True
@@ -33,6 +34,7 @@ class CajaUpdate(BaseModel):
     seguro_vigencia: date | None = None
     tarjeta_circulacion: str | None = None
     tarjeta_vigencia: date | None = None
+    numero_serie: str | None = None
     verificacion: str | None = None
     verificacion_vigencia: date | None = None
     activo: bool | None = None

@@ -40,22 +40,28 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     let message = "Ocurrio un error inesperado";
 
     try {
-      const payload = (await response.json()) as { detail?: string };
+      const payload = (await response.json()) as { detail?: string; message?: string };
       if (payload?.detail) {
         message = payload.detail;
+      } else if (payload?.message) {
+        message = payload.message;
       }
     } catch {
-      // ignore parse failure
+      try {
+        const text = await response.text();
+        if (text.trim()) {
+          message = text.trim();
+        }
+      } catch {
+        // ignore parse failure
+      }
     }
 
-    if (response.status === 403 && !message) {
+    if (response.status === 403 && message === "Ocurrio un error inesperado") {
       message = "No tienes permisos para esta accion";
     }
 
-    throw new ApiError(
-      response.status === 403 ? "No tienes permisos para esta accion" : message,
-      response.status
-    );
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {

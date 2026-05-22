@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadingState } from "@/components/ui/loading-state";
@@ -39,21 +41,36 @@ export default function ViajesPage() {
             : "rounded-[2rem] border border-white/10 bg-white/10 p-5 shadow-soft backdrop-blur"
         }
       >
-        <p
-          className={`text-xs font-semibold uppercase tracking-[0.22em] ${
-            isAdmin(user) ? "text-brand-700" : "text-brand-200"
-          }`}
-        >
-          Operacion diaria
-        </p>
-        <h2 className={`mt-3 text-3xl font-semibold ${isAdmin(user) ? "text-slate-950" : "text-white"}`}>
-          Viajes
-        </h2>
-        <p className={`mt-2 text-sm ${isAdmin(user) ? "text-slate-600" : "text-slate-300"}`}>
-          {isAdmin(user)
-            ? "Vista completa de los viajes visibles para administracion."
-            : "Tus viajes listos para operar. Abre uno y ejecuta acciones rapidas en campo."}
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p
+              className={`text-xs font-semibold uppercase tracking-[0.22em] ${
+                isAdmin(user) ? "text-brand-700" : "text-brand-200"
+              }`}
+            >
+              Operacion diaria
+            </p>
+            <h2
+              className={`mt-3 text-3xl font-semibold ${isAdmin(user) ? "text-slate-950" : "text-white"}`}
+            >
+              Viajes
+            </h2>
+            <p className={`mt-2 text-sm ${isAdmin(user) ? "text-slate-600" : "text-slate-300"}`}>
+              {isAdmin(user)
+                ? "Vista completa de los viajes visibles para administracion."
+                : "Tus viajes listos para operar. Abre uno y ejecuta acciones rapidas en campo."}
+            </p>
+          </div>
+
+          {isAdmin(user) ? (
+            <Link
+              className="inline-flex items-center justify-center rounded-2xl bg-brand-700 px-4 py-3 text-sm font-medium text-white shadow-soft transition hover:bg-brand-800"
+              href="/admin/viajes/nuevo"
+            >
+              Crear viaje
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       {isAdmin(user) ? (

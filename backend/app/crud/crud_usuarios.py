@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.models import Usuario, Rol
 from app.core.security import get_password_hash, verify_password
 from app.schemas.auth import BootstrapAdminCreate
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserAdminUpdate, UserCreate, UserPasswordUpdate, UserUpdate
 
 
 def hash_password(password: str | SecretStr) -> str:
@@ -146,6 +146,24 @@ def update_user(db: Session, db_user: Usuario, user_in: UserUpdate) -> Usuario:
     for field, value in update_data.items():
         setattr(db_user, field, value)
 
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def update_user_admin(db: Session, db_user: Usuario, user_in: UserAdminUpdate) -> Usuario:
+    update_data = user_in.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def update_user_password(db: Session, db_user: Usuario, password_in: UserPasswordUpdate) -> Usuario:
+    db_user.password_hash = hash_password(password_in.new_password)
     db.commit()
     db.refresh(db_user)
     return db_user

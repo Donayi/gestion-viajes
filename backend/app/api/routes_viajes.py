@@ -19,11 +19,13 @@ from app.crud.crud_viajes import (
     create_asignacion_viaje,
     create_viaje,
     delete_evidencia_viaje,
+    get_solicitud_standby_pendiente,
     finalizar_viaje,
     get_archivos_storage_prueba,
     get_asignaciones_by_viaje,
     get_asignaciones_enriched_by_viaje,
     get_cajas_disponibles,
+    get_disponibilidad_resumen,
     get_documentos_by_caja,
     get_documentos_by_operador,
     get_documentos_by_trailer,
@@ -34,6 +36,7 @@ from app.crud.crud_viajes import (
     get_historial_by_viaje,
     get_historial_enriched_by_viaje,
     get_operadores_disponibles,
+    _viaje_listo_para_reinicio,
     get_tipos_documento,
     get_tipos_evidencia,
     get_trailers_disponibles,
@@ -43,6 +46,7 @@ from app.crud.crud_viajes import (
     get_viaje_by_id,
     get_viajes,
     get_viajes_enriched,
+    get_viajes_mapa,
     get_viajes_visibles_para_operador,
     iniciar_carga_viaje,
     iniciar_viaje,
@@ -52,12 +56,17 @@ from app.crud.crud_viajes import (
     operador_exists,
     poner_standby_viaje,
     reasignar_viaje,
+    solicitar_standby_viaje,
+    autorizar_standby_viaje,
     trailer_exists,
     tipo_documento_exists,
     tipo_evidencia_exists,
     usuario_exists,
+    get_evento_operativo_by_id_and_viaje,
     update_evidencia_viaje,
+    update_evento_operativo_viaje,
     update_viaje,
+    reiniciar_viaje,
 )
 from app.db.deps import get_db
 from app.models.models import Usuario
@@ -69,15 +78,23 @@ from app.schemas.evidencia import (
     ViajeEvidenciaResponse,
     ViajeEvidenciaUpdate,
 )
-from app.schemas.evento_operativo import EventoOperativoViajePayload, EventoOperativoViajeResponse
+from app.schemas.evento_operativo import (
+    EventoOperativoCargaPayload,
+    EventoOperativoRetrasoPayload,
+    EventoOperativoViajePayload,
+    EventoOperativoViajeResponse,
+    EventoOperativoViajeUpdatePayload,
+)
 from app.schemas.kpi_operativo import KpiOperativoDashboardResponse, KpiOperativoFilterParams
-from app.schemas.viaje_view import ViajeDetailResponse, ViajeListItemResponse
+from app.schemas.viaje_view import ViajeDetailResponse, ViajeListItemResponse, ViajeMapaItemResponse
 from app.schemas.viaje_view import (
     HistorialEstatusViajeEnrichedResponse,
     ViajeAsignacionEnrichedResponse,
 )
 from app.schemas.viaje import (
+    CambioEstatusResponse,
     CajaDisponibleResponse,
+    DisponibilidadResumenResponse,
     HistorialEstatusViajeResponse,
     OperadorDisponibleResponse,
     TrailerDisponibleResponse,
@@ -130,6 +147,18 @@ def _validar_acceso_viaje(
 
 def _resolve_changed_by(current_user: Usuario, requested_changed_by: int | None) -> int | None:
     return requested_changed_by or current_user.id_usuario
+
+
+def _bloquear_operacion_operador_en_standby(db_viaje, current_user: Usuario) -> None:
+    if _usuario_es_admin(current_user):
+        return
+
+    estatus_actual = db_viaje.estatus_actual
+    if estatus_actual and estatus_actual.clave == "STANDBY":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viaje en standby, pendiente de reasignación administrativa",
+        )
 
 
 @router.post("/", response_model=ViajeResponse, status_code=status.HTTP_201_CREATED)
@@ -194,6 +223,22 @@ def list_viajes_enriched(
         current_user.operador.id_operador,
         skip=skip,
         limit=limit,
+    )
+
+
+@router.get("/mapa", response_model=list[ViajeMapaItemResponse])
+def list_viajes_mapa(
+    estatus: list[str] | None = Query(default=None),
+    incluir_finalizados: bool = Query(default=True),
+    incluir_cancelados: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    return get_viajes_mapa(
+        db,
+        estatus_claves=estatus,
+        incluir_finalizados=incluir_finalizados,
+        incluir_cancelados=incluir_cancelados,
     )
 
 
@@ -295,6 +340,16 @@ def get_viaje_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    setattr(
+        db_viaje,
+        "solicitud_standby_pendiente",
+        get_solicitud_standby_pendiente(db, db_viaje) is not None,
+    )
+    setattr(
+        db_viaje,
+        "requiere_reinicio_viaje",
+        _viaje_listo_para_reinicio(db, db_viaje),
+    )
     return db_viaje
 
 
@@ -318,12 +373,52 @@ def list_eventos_operativos_by_viaje(
     return get_eventos_operativos_by_viaje(db, viaje_id)
 
 
+@router.put(
+    "/{viaje_id}/eventos-operativos/{evento_id}",
+    response_model=EventoOperativoViajeResponse,
+)
+def update_evento_operativo(
+    viaje_id: int,
+    evento_id: int,
+    evento_in: EventoOperativoViajeUpdatePayload,
+    db: Session = Depends(get_db),
+    _current_user: Usuario = Depends(require_admin),
+):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    if db_viaje.estatus_actual and db_viaje.estatus_actual.es_terminal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El viaje ya está {db_viaje.estatus_actual.clave} y no admite nuevas acciones operativas.",
+        )
+
+    db_evento = get_evento_operativo_by_id_and_viaje(db, viaje_id, evento_id)
+    if not db_evento:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evento operativo no encontrado para el viaje especificado",
+        )
+
+    try:
+        return update_evento_operativo_viaje(db, db_evento, evento_in)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 @router.put("/{viaje_id}", response_model=ViajeResponse)
 def update_existing_viaje(
     viaje_id: int,
     viaje_in: ViajeUpdate,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user: Usuario = Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
@@ -346,7 +441,31 @@ def update_existing_viaje(
                 detail="Ya existe otro viaje con ese folio",
             )
 
-    return update_viaje(db, db_viaje, viaje_in)
+    payload = viaje_in.model_dump(exclude_unset=True)
+    forbidden_fields = {
+        "id_estatus_actual",
+        "id_operador_actual",
+        "id_trailer_actual",
+        "id_caja_actual",
+        "fecha_inicio",
+        "fecha_llegada",
+    }
+    attempted_forbidden = sorted(
+        field for field in forbidden_fields if payload.get(field) is not None
+    )
+    if attempted_forbidden:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "La edición administrativa no permite cambiar estatus, "
+                "asignación actual ni fechas operativas directamente"
+            ),
+        )
+
+    sanitized_payload = {field: value for field, value in payload.items() if field not in forbidden_fields}
+    sanitized_payload["updated_by"] = _resolve_changed_by(current_user, viaje_in.updated_by)
+
+    return update_viaje(db, db_viaje, ViajeUpdate(**sanitized_payload))
 
 
 @router.post(
@@ -790,6 +909,15 @@ def create_new_evidencia_viaje(
             detail="El operador especificado no existe",
         )
 
+    if (
+        evidencia_in.id_evento_operativo is not None
+        and not get_evento_operativo_by_id_and_viaje(db, viaje_id, evidencia_in.id_evento_operativo)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El evento operativo especificado no pertenece al viaje",
+        )
+
     try:
         return create_evidencia_viaje(db, db_viaje, evidencia_in)
     except ValueError as exc:
@@ -894,6 +1022,15 @@ def update_evidencia(
             detail="El operador especificado no existe",
         )
 
+    if (
+        evidencia_in.id_evento_operativo is not None
+        and not get_evento_operativo_by_id_and_viaje(db, viaje_id, evidencia_in.id_evento_operativo)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El evento operativo especificado no pertenece al viaje",
+        )
+
     try:
         return update_evidencia_viaje(db, db_evidencia, evidencia_in)
     except ValueError as exc:
@@ -946,6 +1083,7 @@ def cambiar_estatus(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    _bloquear_operacion_operador_en_standby(db_viaje, current_user)
 
     try:
         return cambiar_estatus_viaje(db, db_viaje, cambio_in)
@@ -954,6 +1092,17 @@ def cambiar_estatus(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "/disponibilidad/resumen",
+    response_model=DisponibilidadResumenResponse,
+)
+def get_disponibilidad_planeacion(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    return get_disponibilidad_resumen(db)
 
 
 @router.get(
@@ -1004,6 +1153,12 @@ def list_transiciones_disponibles(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+
+    if db_viaje.estatus_actual and db_viaje.estatus_actual.es_terminal:
+        return []
+
+    if not _usuario_es_admin(current_user) and db_viaje.estatus_actual and db_viaje.estatus_actual.clave == "STANDBY":
+        return []
 
     transiciones = get_transiciones_disponibles_by_viaje(db, db_viaje)
 
@@ -1063,7 +1218,7 @@ def asignar_viaje(
 @router.post("/{viaje_id}/iniciar-carga", response_model=ViajeResponse)
 def iniciar_carga(
     viaje_id: int,
-    accion_in: ViajeComentarioAccion,
+    accion_in: EventoOperativoCargaPayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin_or_operador),
 ):
@@ -1074,12 +1229,14 @@ def iniciar_carga(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    _bloquear_operacion_operador_en_standby(db_viaje, current_user)
 
     try:
         return iniciar_carga_viaje(
             db,
             db_viaje,
-            changed_by=_resolve_changed_by(current_user, accion_in.changed_by),
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1103,6 +1260,7 @@ def iniciar_viaje_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    _bloquear_operacion_operador_en_standby(db_viaje, current_user)
 
     try:
         return iniciar_viaje(
@@ -1122,7 +1280,7 @@ def iniciar_viaje_endpoint(
 @router.post("/{viaje_id}/marcar-retraso", response_model=ViajeResponse)
 def marcar_retraso(
     viaje_id: int,
-    accion_in: ViajeComentarioAccion,
+    accion_in: EventoOperativoRetrasoPayload,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_admin_or_operador),
 ):
@@ -1133,12 +1291,14 @@ def marcar_retraso(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    _bloquear_operacion_operador_en_standby(db_viaje, current_user)
 
     try:
         return marcar_retraso_viaje(
             db,
             db_viaje,
-            changed_by=_resolve_changed_by(current_user, accion_in.changed_by),
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
         )
     except ValueError as exc:
@@ -1153,9 +1313,8 @@ def poner_standby(
     viaje_id: int,
     accion_in: EventoOperativoViajePayload,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_admin_or_operador),
+    current_user: Usuario = Depends(require_admin),
 ):
-    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:
         raise HTTPException(
@@ -1170,6 +1329,108 @@ def poner_standby(
             evento_in=accion_in,
             changed_by=_resolve_changed_by(current_user, None),
             comentario=accion_in.comentario,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/{viaje_id}/solicitar-standby", response_model=CambioEstatusResponse)
+def solicitar_standby(
+    viaje_id: int,
+    accion_in: EventoOperativoViajePayload,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    if _usuario_es_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo un operador puede solicitar standby desde esta ruta",
+        )
+
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    try:
+        solicitar_standby_viaje(
+            db,
+            db_viaje,
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
+        )
+        return CambioEstatusResponse(
+            id_viaje=db_viaje.id_viaje,
+            id_estatus_actual=db_viaje.id_estatus_actual,
+            mensaje="Solicitud registrada, pendiente de autorización administrativa",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/{viaje_id}/reiniciar-viaje", response_model=ViajeResponse)
+def reiniciar_viaje_endpoint(
+    viaje_id: int,
+    accion_in: EventoOperativoViajePayload,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin_or_operador),
+):
+    _validar_acceso_viaje(db, viaje_id, current_user, requiere_operacion=True)
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    try:
+        return reiniciar_viaje(
+            db,
+            db_viaje,
+            evento_in=accion_in,
+            changed_by=_resolve_changed_by(current_user, None),
+            comentario=accion_in.comentario,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/{viaje_id}/autorizar-standby", response_model=ViajeResponse)
+def autorizar_standby(
+    viaje_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_admin),
+):
+    db_viaje = get_viaje_by_id(db, viaje_id)
+    if not db_viaje:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Viaje no encontrado",
+        )
+
+    if not get_solicitud_standby_pendiente(db, db_viaje):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No existe una solicitud de standby pendiente para este viaje",
+        )
+
+    try:
+        return autorizar_standby_viaje(
+            db,
+            db_viaje,
+            changed_by=_resolve_changed_by(current_user, None),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -1242,6 +1503,7 @@ def finalizar(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Viaje no encontrado",
         )
+    _bloquear_operacion_operador_en_standby(db_viaje, current_user)
 
     try:
         return finalizar_viaje(
@@ -1263,7 +1525,7 @@ def cancelar(
     viaje_id: int,
     accion_in: ViajeComentarioAccion,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user: Usuario = Depends(require_admin),
 ):
     db_viaje = get_viaje_by_id(db, viaje_id)
     if not db_viaje:

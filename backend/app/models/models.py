@@ -84,6 +84,9 @@ class Operador(Base):
     id_usuario: Mapped[int] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=False, unique=True)
     alias: Mapped[str] = mapped_column(String(150), nullable=False)
     numero_licencia: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    rfc: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    curp: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    numero_expediente_medico: Mapped[str | None] = mapped_column(String(100), nullable=True)
     licencia_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
     sua: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sua_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
@@ -122,6 +125,8 @@ class Trailer(Base):
     seguro_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
     tarjeta_circulacion: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tarjeta_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    permiso_circulacion: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    numero_serie: Mapped[str | None] = mapped_column(String(150), nullable=True)
     verificacion: Mapped[str | None] = mapped_column(String(100), nullable=True)
     verificacion_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
@@ -139,6 +144,7 @@ class Trailer(Base):
 
     documentos = relationship("Documento", back_populates="trailer")
     eventos_operativos = relationship("EventoOperativoViaje", back_populates="trailer")
+    mantenimientos = relationship("Mantenimiento", back_populates="trailer")
 
 
 class Caja(Base):
@@ -155,6 +161,7 @@ class Caja(Base):
     seguro_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
     tarjeta_circulacion: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tarjeta_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    numero_serie: Mapped[str | None] = mapped_column(String(150), nullable=True)
     verificacion: Mapped[str | None] = mapped_column(String(100), nullable=True)
     verificacion_vigencia: Mapped[Date | None] = mapped_column(Date, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
@@ -172,6 +179,7 @@ class Caja(Base):
 
     documentos = relationship("Documento", back_populates="caja")
     eventos_operativos = relationship("EventoOperativoViaje", back_populates="caja")
+    mantenimientos = relationship("Mantenimiento", back_populates="caja")
 
 
 class Cliente(Base):
@@ -231,10 +239,15 @@ class Viaje(Base):
 
     id_viaje: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     folio: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    folio_viaje_cliente: Mapped[str | None] = mapped_column(String(150), nullable=True)
     id_cliente: Mapped[int] = mapped_column(ForeignKey("clientes.id_cliente"), nullable=False)
 
     lugar_inicio: Mapped[str] = mapped_column(String(255), nullable=False)
     lugar_destino: Mapped[str] = mapped_column(String(255), nullable=False)
+    lugar_inicio_latitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lugar_inicio_longitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lugar_destino_latitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
+    lugar_destino_longitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     tipo_carga: Mapped[str | None] = mapped_column(String(150), nullable=True)
     descripcion_carga: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -257,10 +270,15 @@ class Viaje(Base):
     )
 
     fecha_programada_salida: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    fecha_carga: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    hora_carga: Mapped[Time | None] = mapped_column(Time, nullable=True)
     fecha_inicio: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
     fecha_llegada: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    fecha_descarga: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    hora_descarga: Mapped[Time | None] = mapped_column(Time, nullable=True)
     fecha_entrega: Mapped[Date | None] = mapped_column(Date, nullable=True)
     hora_entrega: Mapped[Time | None] = mapped_column(Time, nullable=True)
+    hora_cita_descarga: Mapped[Time | None] = mapped_column(Time, nullable=True)
 
     observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -377,8 +395,8 @@ class EventoOperativoViaje(Base):
     id_trailer: Mapped[int | None] = mapped_column(ForeignKey("trailers.id_trailer"), nullable=True)
     id_caja: Mapped[int | None] = mapped_column(ForeignKey("cajas.id_caja"), nullable=True)
     tipo_evento: Mapped[str] = mapped_column(String(50), nullable=False)
-    kilometraje: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    nivel_diesel: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    kilometraje: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    nivel_diesel: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     ubicacion: Mapped[str] = mapped_column(String(255), nullable=False)
     latitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
     longitud: Mapped[float | None] = mapped_column(Numeric(10, 7), nullable=True)
@@ -391,6 +409,7 @@ class EventoOperativoViaje(Base):
     trailer = relationship("Trailer", back_populates="eventos_operativos")
     caja = relationship("Caja", back_populates="eventos_operativos")
     usuario_creador = relationship("Usuario", back_populates="eventos_operativos_creados")
+    evidencias = relationship("Evidencia", back_populates="evento_operativo")
 
 
 class TransicionEstatusViaje(Base):
@@ -467,6 +486,7 @@ class ArchivoStorage(Base):
     usuario_subio = relationship("Usuario", back_populates="archivos_subidos")
     documentos = relationship("Documento", back_populates="archivo")
     evidencias = relationship("Evidencia", back_populates="archivo")
+    mantenimientos_archivos = relationship("MantenimientoArchivo", back_populates="archivo")
     incidencias_archivos = relationship("IncidenciaArchivo", back_populates="archivo")
 
 
@@ -498,8 +518,13 @@ class Documento(Base):
     estatus: Mapped[str] = mapped_column(
         String(50), nullable=False, default="VIGENTE", server_default="VIGENTE"
     )
+    comentario: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     subido_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     tipo_documento = relationship("TipoDocumento", back_populates="documentos")
     operador = relationship("Operador", back_populates="documentos")
@@ -508,6 +533,34 @@ class Documento(Base):
     viaje = relationship("Viaje", back_populates="documentos")
     archivo = relationship("ArchivoStorage", back_populates="documentos")
     usuario_subio = relationship("Usuario", back_populates="documentos_subidos")
+
+    @property
+    def entidad_tipo(self) -> str | None:
+        if self.id_operador is not None:
+            return "OPERADOR"
+        if self.id_trailer is not None:
+            return "TRAILER"
+        if self.id_caja is not None:
+            return "CAJA"
+        if self.id_viaje is not None:
+            return "VIAJE"
+        return None
+
+    @property
+    def entidad_id(self) -> int | None:
+        if self.id_operador is not None:
+            return self.id_operador
+        if self.id_trailer is not None:
+            return self.id_trailer
+        if self.id_caja is not None:
+            return self.id_caja
+        if self.id_viaje is not None:
+            return self.id_viaje
+        return None
+
+    @property
+    def fecha_vencimiento(self) -> Date | None:
+        return self.fecha_expiracion
 
 
 class TipoEvidencia(Base):
@@ -525,6 +578,10 @@ class Evidencia(Base):
 
     id_evidencia: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     id_viaje: Mapped[int] = mapped_column(ForeignKey("viajes.id_viaje"), nullable=False)
+    id_evento_operativo: Mapped[int | None] = mapped_column(
+        ForeignKey("eventos_operativos_viaje.id_evento"),
+        nullable=True,
+    )
     id_tipo_evidencia: Mapped[int] = mapped_column(ForeignKey("tipos_evidencia.id_tipo_evidencia"), nullable=False)
     id_operador: Mapped[int | None] = mapped_column(ForeignKey("operadores.id_operador"), nullable=True)
     id_archivo: Mapped[int] = mapped_column(ForeignKey("archivos_storage.id_archivo"), nullable=False)
@@ -535,9 +592,198 @@ class Evidencia(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     viaje = relationship("Viaje", back_populates="evidencias")
+    evento_operativo = relationship("EventoOperativoViaje", back_populates="evidencias")
     tipo_evidencia = relationship("TipoEvidencia", back_populates="evidencias")
     operador = relationship("Operador", back_populates="evidencias")
     archivo = relationship("ArchivoStorage", back_populates="evidencias")
+
+
+class Mantenimiento(Base):
+    __tablename__ = "mantenimientos"
+    __table_args__ = (
+        CheckConstraint(
+            """
+            (
+                (CASE WHEN id_trailer IS NOT NULL THEN 1 ELSE 0 END) +
+                (CASE WHEN id_caja IS NOT NULL THEN 1 ELSE 0 END)
+            ) = 1
+            """,
+            name="ck_mantenimientos_una_sola_entidad",
+        ),
+    )
+
+    id_mantenimiento: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entidad_tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    id_trailer: Mapped[int | None] = mapped_column(ForeignKey("trailers.id_trailer"), nullable=True)
+    id_caja: Mapped[int | None] = mapped_column(ForeignKey("cajas.id_caja"), nullable=True)
+    tipo_mantenimiento: Mapped[str] = mapped_column(String(30), nullable=False)
+    estatus: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="ABIERTO", server_default="ABIERTO"
+    )
+    fecha_inicio: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    fecha_mantenimiento: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    fecha_proximo_mantenimiento: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    fecha_fin: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    kilometraje: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    descripcion: Mapped[str] = mapped_column(Text, nullable=False)
+    observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    trailer = relationship("Trailer", back_populates="mantenimientos")
+    caja = relationship("Caja", back_populates="mantenimientos")
+    usuario_creador = relationship("Usuario", foreign_keys=[created_by])
+    usuario_actualizador = relationship("Usuario", foreign_keys=[updated_by])
+    checklist_items = relationship(
+        "MantenimientoChecklistItem",
+        back_populates="mantenimiento",
+        cascade="all, delete-orphan",
+        order_by="MantenimientoChecklistItem.id_item.asc()",
+    )
+    archivos = relationship(
+        "MantenimientoArchivo",
+        back_populates="mantenimiento",
+        cascade="all, delete-orphan",
+        order_by="desc(MantenimientoArchivo.created_at)",
+    )
+
+    @property
+    def entidad_id(self) -> int | None:
+        return self.id_trailer if self.id_trailer is not None else self.id_caja
+
+    @property
+    def entidad(self) -> dict[str, object]:
+        if self.trailer is not None:
+            return {
+                "id": self.trailer.id_trailer,
+                "etiqueta": self.trailer.numero_economico,
+                "subtitulo": self.trailer.placas,
+            }
+        if self.caja is not None:
+            return {
+                "id": self.caja.id_caja,
+                "etiqueta": self.caja.numero_economico or self.caja.placas,
+                "subtitulo": self.caja.placas,
+            }
+        return {"id": 0, "etiqueta": "Sin recurso", "subtitulo": None}
+
+
+class MantenimientoChecklistItem(Base):
+    __tablename__ = "mantenimiento_checklist_items"
+
+    id_item: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_mantenimiento: Mapped[int] = mapped_column(
+        ForeignKey("mantenimientos.id_mantenimiento"),
+        nullable=False,
+    )
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    observaciones: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    mantenimiento = relationship("Mantenimiento", back_populates="checklist_items")
+    evidencias = relationship(
+        "MantenimientoChecklistEvidencia",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="desc(MantenimientoChecklistEvidencia.created_at)",
+    )
+
+
+class MantenimientoChecklistEvidencia(Base):
+    __tablename__ = "mantenimiento_checklist_evidencias"
+
+    id_checklist_evidencia: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_item: Mapped[int] = mapped_column(
+        ForeignKey("mantenimiento_checklist_items.id_item"),
+        nullable=False,
+    )
+    id_archivo: Mapped[int] = mapped_column(ForeignKey("archivos_storage.id_archivo"), nullable=False)
+    comentario: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    item = relationship("MantenimientoChecklistItem", back_populates="evidencias")
+    archivo = relationship("ArchivoStorage")
+    usuario_creador = relationship("Usuario", foreign_keys=[created_by])
+
+
+class MantenimientoArchivo(Base):
+    __tablename__ = "mantenimiento_archivos"
+
+    id_mantenimiento_archivo: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_mantenimiento: Mapped[int] = mapped_column(
+        ForeignKey("mantenimientos.id_mantenimiento"),
+        nullable=False,
+    )
+    id_archivo: Mapped[int] = mapped_column(ForeignKey("archivos_storage.id_archivo"), nullable=False)
+    tipo_archivo: Mapped[str] = mapped_column(String(30), nullable=False)
+    comentario: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    mantenimiento = relationship("Mantenimiento", back_populates="archivos")
+    archivo = relationship("ArchivoStorage", back_populates="mantenimientos_archivos")
+    usuario_creador = relationship("Usuario", foreign_keys=[created_by])
+
+
+class Alerta(Base):
+    __tablename__ = "alertas"
+
+    id_alerta: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tipo_alerta: Mapped[str] = mapped_column(String(100), nullable=False)
+    entidad_tipo: Mapped[str] = mapped_column(String(50), nullable=False)
+    entidad_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    mensaje: Mapped[str] = mapped_column(Text, nullable=False)
+    nivel: Mapped[str] = mapped_column(String(20), nullable=False)
+    leida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    requiere_notificacion: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    notificada: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    canal_notificacion: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fecha_notificacion: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class TelegramDestinatario(Base):
+    __tablename__ = "telegram_destinatarios"
+
+    id_destinatario: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    chat_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    recibe_documentos: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    recibe_mantenimiento: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    recibe_viajes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Incidencia(Base):
