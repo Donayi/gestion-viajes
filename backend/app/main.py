@@ -78,7 +78,7 @@ def on_startup():
                     FROM pg_indexes
                     WHERE schemaname = 'public'
                       AND tablename = 'viajes'
-                      AND indexdef ILIKE 'CREATE UNIQUE INDEX% (folio)%'
+                      AND indexdef ILIKE 'CREATE UNIQUE INDEX%% (folio)%%'
                 ) THEN
                     CREATE UNIQUE INDEX ux_viajes_folio ON viajes (folio);
                 END IF;
