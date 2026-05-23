@@ -168,13 +168,6 @@ def create_new_viaje(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    existing_viaje = get_viaje_by_folio(db, viaje_in.folio)
-    if existing_viaje:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ya existe un viaje con ese folio",
-        )
-
     if not cliente_exists(db, viaje_in.id_cliente):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

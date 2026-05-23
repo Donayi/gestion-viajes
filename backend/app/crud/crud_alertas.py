@@ -361,12 +361,17 @@ def crear_alerta_entrada_mantenimiento(db: Session, mantenimiento: Mantenimiento
 
 
 def crear_alerta_viaje_creado(db: Session, viaje: Viaje) -> Alerta:
+    referencia_cliente = (
+        f"\nFolio cliente: {viaje.folio_viaje_cliente}"
+        if viaje.folio_viaje_cliente
+        else ""
+    )
     return create_alerta_evento(
         db,
         tipo_alerta="VIAJE_CREADO",
         entidad_tipo="VIAJE",
         entidad_id=viaje.id_viaje,
-        mensaje=f"Se creó el viaje {viaje.folio}.",
+        mensaje=f"Se creó el viaje {viaje.folio}.{referencia_cliente}",
         nivel="INFO",
         requiere_notificacion=True,
     )

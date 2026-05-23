@@ -200,7 +200,6 @@ export type ViajeRecord = {
 };
 
 export type ViajeCreatePayload = {
-  folio: string;
   folio_viaje_cliente?: string | null;
   id_cliente: number;
   lugar_inicio: string;

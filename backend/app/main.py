@@ -70,6 +70,23 @@ def on_startup():
             "ALTER TABLE IF EXISTS viajes ADD COLUMN IF NOT EXISTS folio_viaje_cliente VARCHAR(150)"
         )
         connection.exec_driver_sql(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND tablename = 'viajes'
+                      AND indexdef ILIKE 'CREATE UNIQUE INDEX% (folio)%'
+                ) THEN
+                    CREATE UNIQUE INDEX ux_viajes_folio ON viajes (folio);
+                END IF;
+            END
+            $$;
+            """
+        )
+        connection.exec_driver_sql(
             "ALTER TABLE IF EXISTS viajes ADD COLUMN IF NOT EXISTS hora_cita_descarga TIME"
         )
         connection.exec_driver_sql(

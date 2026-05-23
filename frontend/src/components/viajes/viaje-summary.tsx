@@ -15,6 +15,8 @@ export function ViajeSummary({ viaje }: { viaje: ViajeDetail }) {
   return (
     <Card className="p-5 md:p-6">
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <Item label="Folio interno" value={viaje.folio} />
+        <Item label="Folio cliente" value={viaje.folio_viaje_cliente ?? "Sin dato"} />
         <Item label="Cliente" value={viaje.cliente.nombre_razon_social} />
         <Item label="Origen" value={viaje.lugar_inicio} />
         <Item label="Destino" value={viaje.lugar_destino} />

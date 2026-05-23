@@ -1,8 +1,10 @@
 from datetime import date, datetime
 from pathlib import Path
+import re
 
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 
 from app.models.models import (
     ArchivoStorage,
@@ -89,6 +91,28 @@ def get_viaje_by_id(db: Session, viaje_id: int) -> Viaje | None:
 
 def get_viaje_by_folio(db: Session, folio: str) -> Viaje | None:
     return db.query(Viaje).filter(Viaje.folio == folio).first()
+
+
+def _generate_next_viaje_folio(db: Session, year: int) -> str:
+    prefix = f"VJ-{year}-"
+    pattern = re.compile(rf"^VJ-{year}-(\d{{4}})$")
+    ultimo_folio = (
+        db.query(Viaje.folio)
+        .filter(Viaje.folio.like(f"{prefix}%"))
+        .order_by(Viaje.folio.desc())
+        .first()
+    )
+
+    consecutivo = 1
+    if ultimo_folio and ultimo_folio[0]:
+        match = pattern.match(ultimo_folio[0])
+        if match:
+            consecutivo = int(match.group(1)) + 1
+
+    if consecutivo > 9999:
+        raise ValueError(f"Se alcanzó el máximo de folios para el año {year}.")
+
+    return f"{prefix}{consecutivo:04d}"
 
 
 def get_viajes(db: Session, skip: int = 0, limit: int = 100) -> list[Viaje]:
@@ -1657,46 +1681,58 @@ def create_viaje(db: Session, viaje_in: ViajeCreate, created_by: int | None = No
     estatus_creado = get_estatus_by_clave(db, "CREADO")
     if not estatus_creado:
         raise ValueError("No existe el estatus base CREADO")
+    current_year = datetime.utcnow().year
 
-    db_viaje = Viaje(
-        folio=viaje_in.folio,
-        folio_viaje_cliente=viaje_in.folio_viaje_cliente,
-        id_cliente=viaje_in.id_cliente,
-        lugar_inicio=viaje_in.lugar_inicio,
-        lugar_destino=viaje_in.lugar_destino,
-        lugar_inicio_latitud=viaje_in.lugar_inicio_latitud,
-        lugar_inicio_longitud=viaje_in.lugar_inicio_longitud,
-        lugar_destino_latitud=viaje_in.lugar_destino_latitud,
-        lugar_destino_longitud=viaje_in.lugar_destino_longitud,
-        tipo_carga=viaje_in.tipo_carga,
-        descripcion_carga=viaje_in.descripcion_carga,
-        fecha_programada_salida=viaje_in.fecha_programada_salida,
-        fecha_carga=viaje_in.fecha_carga,
-        hora_carga=viaje_in.hora_carga,
-        fecha_descarga=viaje_in.fecha_descarga,
-        hora_descarga=viaje_in.hora_descarga,
-        hora_cita_descarga=viaje_in.hora_cita_descarga,
-        observaciones=viaje_in.observaciones,
-        id_estatus_actual=estatus_creado.id_estatus,
-        created_by=created_by,
-        updated_by=created_by,
-    )
-    db.add(db_viaje)
-    db.flush()
+    for _ in range(2):
+        folio_generado = _generate_next_viaje_folio(db, current_year)
+        db_viaje = Viaje(
+            folio=folio_generado,
+            folio_viaje_cliente=viaje_in.folio_viaje_cliente,
+            id_cliente=viaje_in.id_cliente,
+            lugar_inicio=viaje_in.lugar_inicio,
+            lugar_destino=viaje_in.lugar_destino,
+            lugar_inicio_latitud=viaje_in.lugar_inicio_latitud,
+            lugar_inicio_longitud=viaje_in.lugar_inicio_longitud,
+            lugar_destino_latitud=viaje_in.lugar_destino_latitud,
+            lugar_destino_longitud=viaje_in.lugar_destino_longitud,
+            tipo_carga=viaje_in.tipo_carga,
+            descripcion_carga=viaje_in.descripcion_carga,
+            fecha_programada_salida=viaje_in.fecha_programada_salida,
+            fecha_carga=viaje_in.fecha_carga,
+            hora_carga=viaje_in.hora_carga,
+            fecha_descarga=viaje_in.fecha_descarga,
+            hora_descarga=viaje_in.hora_descarga,
+            hora_cita_descarga=viaje_in.hora_cita_descarga,
+            observaciones=viaje_in.observaciones,
+            id_estatus_actual=estatus_creado.id_estatus,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        db.add(db_viaje)
 
-    historial = HistorialEstatusViaje(
-        id_viaje=db_viaje.id_viaje,
-        id_estatus=estatus_creado.id_estatus,
-        comentario="Viaje creado",
-        changed_by=created_by,
-    )
-    db.add(historial)
-    alerta_viaje_creado = crear_alerta_viaje_creado(db, db_viaje)
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            if "viajes_folio_key" not in str(exc.orig) and "folio" not in str(exc.orig).lower():
+                raise
+            continue
 
-    db.commit()
-    db.refresh(db_viaje)
-    notificar_alerta_inmediata_si_aplica(db, alerta_viaje_creado)
-    return db_viaje
+        historial = HistorialEstatusViaje(
+            id_viaje=db_viaje.id_viaje,
+            id_estatus=estatus_creado.id_estatus,
+            comentario="Viaje creado",
+            changed_by=created_by,
+        )
+        db.add(historial)
+        alerta_viaje_creado = crear_alerta_viaje_creado(db, db_viaje)
+
+        db.commit()
+        db.refresh(db_viaje)
+        notificar_alerta_inmediata_si_aplica(db, alerta_viaje_creado)
+        return db_viaje
+
+    raise ValueError("No fue posible generar un folio interno único para el viaje. Intenta de nuevo.")
 
 
 def update_viaje(db: Session, db_viaje: Viaje, viaje_in: ViajeUpdate) -> Viaje:

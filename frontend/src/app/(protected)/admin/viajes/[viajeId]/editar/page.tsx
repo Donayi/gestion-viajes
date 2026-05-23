@@ -114,7 +114,6 @@ function buildUpdatePayload(
   updatedBy: number | null | undefined
 ): ViajeUpdatePayload {
   return {
-    folio: form.folio.trim(),
     folio_viaje_cliente: form.folio_viaje_cliente.trim() || null,
     id_cliente: Number(form.id_cliente),
     lugar_inicio: form.lugar_inicio.trim(),
@@ -326,13 +325,13 @@ export default function AdminEditarViajePage() {
           </p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-sm font-medium text-slate-700">Folio interno</p>
+              <p className="mt-1 text-sm text-slate-950">{form.folio}</p>
+              <p className="mt-2 text-xs text-slate-500">Este folio lo genera el sistema y no es editable.</p>
+            </div>
             <Input
-              label="Folio"
-              onChange={(event) => setForm((current) => current ? { ...current, folio: event.target.value } : current)}
-              value={form.folio}
-            />
-            <Input
-              label="Folio viaje cliente"
+              label="Folio del cliente"
               onChange={(event) =>
                 setForm((current) => current ? { ...current, folio_viaje_cliente: event.target.value } : current)
               }
@@ -495,7 +494,7 @@ export default function AdminEditarViajePage() {
           <div className="mt-6 flex flex-wrap gap-3">
             {isFinalizado ? null : (
               <Button
-                disabled={saving || !form.folio.trim() || !form.id_cliente || !form.lugar_inicio.trim() || !form.lugar_destino.trim()}
+                disabled={saving || !form.id_cliente || !form.lugar_inicio.trim() || !form.lugar_destino.trim()}
                 onClick={() => void handleSave()}
                 type="button"
               >

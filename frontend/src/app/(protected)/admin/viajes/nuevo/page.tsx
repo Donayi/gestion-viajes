@@ -26,7 +26,6 @@ import type { CajaDisponible, OperadorDisponible, TrailerDisponible, ViajeRecord
 import type { Cliente } from "@/types/cliente";
 
 type ViajeFormState = {
-  folio: string;
   folio_viaje_cliente: string;
   id_cliente: string;
   lugar_inicio: string;
@@ -55,7 +54,6 @@ type AsignacionFormState = {
 };
 
 const initialViajeForm: ViajeFormState = {
-  folio: "",
   folio_viaje_cliente: "",
   id_cliente: "",
   lugar_inicio: "",
@@ -178,10 +176,6 @@ export default function AdminNuevoViajePage() {
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
 
-    if (!viajeForm.folio.trim()) {
-      missing.push("folio");
-    }
-
     if (!viajeForm.id_cliente) {
       missing.push("cliente");
     }
@@ -196,7 +190,6 @@ export default function AdminNuevoViajePage() {
 
     return missing;
   }, [
-    viajeForm.folio,
     viajeForm.id_cliente,
     viajeForm.lugar_destino,
     viajeForm.lugar_inicio,
@@ -217,7 +210,6 @@ export default function AdminNuevoViajePage() {
     try {
       const viaje = await createViajeRequest(
         {
-          folio: viajeForm.folio.trim(),
           folio_viaje_cliente: viajeForm.folio_viaje_cliente.trim() || null,
           id_cliente: Number(viajeForm.id_cliente),
           lugar_inicio: viajeForm.lugar_inicio.trim(),
@@ -362,15 +354,7 @@ export default function AdminNuevoViajePage() {
             <>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <Input
-                  label="Folio"
-                  onChange={(event) =>
-                    setViajeForm((current) => ({ ...current, folio: event.target.value }))
-                  }
-                  placeholder="VJ-2026-001"
-                  value={viajeForm.folio}
-                />
-                <Input
-                  label="Folio viaje cliente"
+                  label="Folio del cliente"
                   onChange={(event) =>
                     setViajeForm((current) => ({
                       ...current,
@@ -380,6 +364,10 @@ export default function AdminNuevoViajePage() {
                   placeholder="OC-45892"
                   value={viajeForm.folio_viaje_cliente}
                 />
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <p className="font-medium text-slate-900">Folio interno</p>
+                  <p className="mt-1">El folio interno se generará automáticamente al guardar.</p>
+                </div>
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-slate-700">Cliente</span>
                   <select
@@ -543,7 +531,7 @@ export default function AdminNuevoViajePage() {
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  Listo para guardar. La asignación, el mapa y las fechas de carga/descarga pueden capturarse después.
+                  Listo para guardar. El folio interno se generará automáticamente. La asignación, el mapa y las fechas de carga/descarga pueden capturarse después.
                 </div>
               )}
 

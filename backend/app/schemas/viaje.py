@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ViajeBase(BaseModel):
-    folio: str
     folio_viaje_cliente: str | None = None
     id_cliente: int
     lugar_inicio: str
