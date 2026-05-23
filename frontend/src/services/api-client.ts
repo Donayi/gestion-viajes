@@ -23,10 +23,26 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${env.apiUrl}${path}`, {
-    ...options,
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${env.apiUrl}${path}`, {
+      ...options,
+      headers
+    });
+  } catch (error) {
+    const isNetworkError =
+      error instanceof TypeError ||
+      (error instanceof Error && /fetch|network|failed/i.test(error.message));
+
+    if (isNetworkError) {
+      throw new ApiError(
+        "No fue posible conectar con la API. Verifica que el backend esté levantado e inténtalo de nuevo.",
+        0
+      );
+    }
+
+    throw error;
+  }
 
   if (response.status === 401) {
     clearStoredToken();
