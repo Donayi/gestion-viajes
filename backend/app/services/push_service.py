@@ -116,7 +116,9 @@ def send_push_to_subscription(
             )
         return False
 
-    if not settings.web_push_vapid_private_key:
+    private_key = settings.web_push_vapid_private_key.strip() if settings.web_push_vapid_private_key else ""
+
+    if not private_key:
         summary = _build_error_summary(
             kind="missing-vapid-private-key",
             subscription=subscription,
@@ -158,9 +160,10 @@ def send_push_to_subscription(
     }
 
     logger.info(
-        "Sending Web Push | enabled=%s | has_private_key=%s | subject=%s | subscription=%s | user=%s | endpoint=%s",
+        "Sending Web Push | enabled=%s | has_private_key=%s | private_key_type=%s | subject=%s | subscription=%s | user=%s | endpoint=%s",
         settings.web_push_enabled,
-        bool(settings.web_push_vapid_private_key),
+        bool(private_key),
+        type(private_key).__name__,
         settings.web_push_subject,
         subscription.id_subscription,
         subscription.id_usuario,
@@ -177,7 +180,7 @@ def send_push_to_subscription(
                 },
             },
             data=json.dumps(payload, ensure_ascii=False),
-            vapid_private_key=settings.web_push_vapid_private_key,
+            vapid_private_key=private_key,
             vapid_claims={"sub": settings.web_push_subject},
         )
         _touch_subscription_success(subscription)
