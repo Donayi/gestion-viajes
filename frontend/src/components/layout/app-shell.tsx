@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useSession } from "@/hooks/use-session";
+import { LocationStatusChip } from "@/components/location/location-status-chip";
 import { canSeeAdminNavigation, isMantenimiento, isOperador } from "@/lib/permissions";
 import { AdminMobileDrawer, AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
@@ -61,6 +62,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               operador || mantenimiento ? "mx-auto w-full max-w-3xl" : ""
             }`}
           >
+            {operador || mantenimiento ? (
+              <div className="mb-4 lg:hidden">
+                <LocationStatusChip />
+              </div>
+            ) : null}
             {children}
           </main>
         </div>

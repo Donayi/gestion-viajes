@@ -3,6 +3,7 @@
 import { Menu } from "lucide-react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { LocationStatusChip } from "@/components/location/location-status-chip";
 import { useSession } from "@/hooks/use-session";
 import { canSeeAdminNavigation, isMantenimiento, isOperador } from "@/lib/permissions";
 
@@ -52,6 +53,11 @@ export function AppTopbar({ onOpenAdminMenu }: { onOpenAdminMenu?: () => void })
       </div>
 
       <div className="flex items-center gap-3">
+        {operador || mantenimiento ? (
+          <div className="hidden max-w-xs lg:block">
+            <LocationStatusChip />
+          </div>
+        ) : null}
         <div
           className={`hidden rounded-2xl px-4 py-2 text-right md:block ${
             operador || mantenimiento

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { EvidenceFilePicker } from "@/components/ui/evidence-file-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { usePersistentLocation } from "@/hooks/use-persistent-location";
 import {
   formatFileSize,
   prepareEvidenceFile,
@@ -146,6 +147,7 @@ export function OperatorActionPanel({
   viaje: ViajeDetail;
   onSuccess: () => Promise<void>;
 }) {
+  const persistentLocation = usePersistentLocation();
   const estatusActual = viaje.estatus_actual.clave;
   const isFinalizado = estatusActual === "FINALIZADO";
   const isCancelado = estatusActual === "CANCELADO";
@@ -510,6 +512,25 @@ export function OperatorActionPanel({
 
     void captureCurrentLocation({ auto: true });
   }, [activeAction]);
+
+  useEffect(() => {
+    if (!activeAction || !persistentLocation.location) {
+      return;
+    }
+
+    setOperationalForm((current) => ({
+      ...current,
+      ubicacion: current.ubicacion.trim() || "Ubicación disponible desde GPS activo",
+      latitud: current.latitud.trim() || persistentLocation.location!.latitud.toFixed(7),
+      longitud: current.longitud.trim() || persistentLocation.location!.longitud.toFixed(7),
+    }));
+
+    if (persistentLocation.stale) {
+      setGeoMessage("Última ubicación disponible con más de 10 minutos. Puedes actualizarla antes de continuar.");
+    } else {
+      setGeoMessage("Se precargó tu última ubicación válida.");
+    }
+  }, [activeAction, persistentLocation.location, persistentLocation.stale]);
 
   useEffect(() => {
     if (!activeAction) {
