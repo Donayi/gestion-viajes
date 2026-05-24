@@ -4,6 +4,7 @@ import { UserCog } from "lucide-react";
 
 import { AdminPlaceholder } from "@/components/admin/admin-placeholder";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
 
 export default function AdminPerfilPage() {
   return (
@@ -18,6 +19,7 @@ export default function AdminPerfilPage() {
         title="Perfil de administrador"
         description="Aquí se concentrarán los datos de perfil, ajustes personales y preferencias de operación del usuario administrador."
       />
+      <PushNotificationSettings />
     </div>
   );
 }

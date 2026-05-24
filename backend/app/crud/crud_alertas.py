@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.models.models import Alerta, Documento, Mantenimiento, Operador, TelegramDestinatario, TipoDocumento, Viaje
+from app.services.push_service import send_push_for_alert
 from app.services.telegram_service import send_telegram_message
 
 
@@ -150,17 +151,25 @@ def _procesar_alerta_telegram(db: Session, alerta: Alerta) -> bool:
             continue
         if send_telegram_message(message, chat_id=destinatario.chat_id):
             sent_any = True
+    return sent_any
 
-    if sent_any:
-        alerta.notificada = True
-        alerta.canal_notificacion = "TELEGRAM"
-        alerta.fecha_notificacion = datetime.utcnow()
-        db.commit()
-        db.refresh(alerta)
-        return True
 
-    db.rollback()
-    return False
+def _procesar_alerta_push(db: Session, alerta: Alerta) -> bool:
+    if not alerta.requiere_notificacion or alerta.notificada:
+        return False
+    return send_push_for_alert(db, alerta)
+
+
+def _finalizar_alerta_notificada(db: Session, alerta: Alerta, canales: list[str]) -> bool:
+    if not canales:
+        return False
+
+    alerta.notificada = True
+    alerta.canal_notificacion = ",".join(canales)
+    alerta.fecha_notificacion = datetime.utcnow()
+    db.commit()
+    db.refresh(alerta)
+    return True
 
 
 def notificar_alerta_inmediata_si_aplica(db: Session, alerta: Alerta | None) -> bool:
@@ -168,7 +177,12 @@ def notificar_alerta_inmediata_si_aplica(db: Session, alerta: Alerta | None) -> 
         return False
 
     try:
-        return _procesar_alerta_telegram(db, alerta)
+        canales: list[str] = []
+        if _procesar_alerta_telegram(db, alerta):
+            canales.append("TELEGRAM")
+        if _procesar_alerta_push(db, alerta):
+            canales.append("PUSH")
+        return _finalizar_alerta_notificada(db, alerta, canales)
     except Exception:
         db.rollback()
         return False
@@ -455,11 +469,17 @@ def procesar_notificaciones_pendientes(db: Session) -> dict[str, int]:
     fallidas = 0
 
     for alerta in alertas:
+        canales: list[str] = []
         if _procesar_alerta_telegram(db, alerta):
+            canales.append("TELEGRAM")
+        if _procesar_alerta_push(db, alerta):
+            canales.append("PUSH")
+
+        if _finalizar_alerta_notificada(db, alerta, canales):
             enviadas += 1
         else:
-            if _get_destinatarios_para_alerta(db, alerta) or settings.telegram_default_chat_id:
-                if settings.telegram_enabled:
+            if _get_destinatarios_para_alerta(db, alerta) or settings.telegram_default_chat_id or settings.web_push_enabled:
+                if settings.telegram_enabled or settings.web_push_enabled:
                     fallidas += 1
                 else:
                     omitidas += 1

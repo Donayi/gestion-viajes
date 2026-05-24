@@ -16,6 +16,7 @@ from app.api.routes_documentos import router as documentos_router
 from app.api.routes_alertas import router as alertas_router
 from app.api.routes_kpis import router as kpis_router
 from app.api.routes_mantenimientos import router as mantenimientos_router
+from app.api.routes_push import router as push_router
 from app.api.routes_telegram import router as telegram_router
 from app.api.routes_viajes import router as viajes_router
 from app.db.base import Base
@@ -224,6 +225,51 @@ def on_startup():
         connection.exec_driver_sql(
             "UPDATE alertas SET notificada = FALSE WHERE notificada IS NULL"
         )
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id_subscription SERIAL PRIMARY KEY,
+                id_usuario INTEGER NOT NULL REFERENCES usuarios(id_usuario),
+                endpoint VARCHAR(1000) NOT NULL UNIQUE,
+                p256dh VARCHAR(255) NOT NULL,
+                auth VARCHAR(255) NOT NULL,
+                user_agent VARCHAR(500),
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                last_success_at TIMESTAMP,
+                last_failure_at TIMESTAMP,
+                failure_count INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS user_agent VARCHAR(500)"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMP"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS last_failure_at TIMESTAMP"
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE IF EXISTS push_subscriptions ADD COLUMN IF NOT EXISTS failure_count INTEGER DEFAULT 0"
+        )
+        connection.exec_driver_sql(
+            "UPDATE push_subscriptions SET activo = TRUE WHERE activo IS NULL"
+        )
+        connection.exec_driver_sql(
+            "UPDATE push_subscriptions SET failure_count = 0 WHERE failure_count IS NULL"
+        )
 
     db: Session = SessionLocal()
     try:
@@ -242,6 +288,7 @@ app.include_router(documentos_router)
 app.include_router(alertas_router)
 app.include_router(kpis_router)
 app.include_router(mantenimientos_router)
+app.include_router(push_router)
 app.include_router(telegram_router)
 app.include_router(roles_router)
 app.include_router(usuarios_router)

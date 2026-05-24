@@ -1,4 +1,4 @@
-const CACHE_NAME = "DAFREQ_CACHE_V1";
+const CACHE_NAME = "DAFREQ_CACHE_V2";
 const PRECACHE_URLS = [
   "/",
   "/offline.html",
@@ -110,4 +110,51 @@ self.addEventListener("fetch", (event) => {
       })
     );
   }
+});
+
+self.addEventListener("push", (event) => {
+  const payload = event.data ? event.data.json() : {};
+  const title = payload.title || "DAFREQ";
+  const options = {
+    body: payload.body || "Hay una nueva actualización en la plataforma.",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: payload.tag || "dafreq-notification",
+    data: {
+      url: payload.url || "/dashboard",
+      type: payload.type || "GENERIC",
+      ...(payload.data || {}),
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || "/dashboard", self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          const currentUrl = new URL(client.url, self.location.origin).href;
+          if (currentUrl === targetUrl) {
+            return client.focus();
+          }
+        }
+      }
+
+      const visibleClient = clients[0];
+      if (visibleClient && "navigate" in visibleClient) {
+        return visibleClient.navigate(targetUrl).then(() => visibleClient.focus());
+      }
+
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+
+      return undefined;
+    })
+  );
 });

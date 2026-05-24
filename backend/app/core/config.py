@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_default_chat_id: str | None = None
     app_public_url: str | None = None
+    web_push_enabled: bool = False
+    web_push_vapid_public_key: str | None = None
+    web_push_vapid_private_key: str | None = None
+    web_push_subject: str = "mailto:admin@dafreqlogistica.com"
 
     model_config = SettingsConfigDict(
         env_file=".env",

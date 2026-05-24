@@ -75,6 +75,7 @@ class Usuario(Base):
         "AsignacionViaje",
         back_populates="usuario_creador",
     )
+    push_subscriptions = relationship("PushSubscription", back_populates="usuario")
 
 
 class Operador(Base):
@@ -784,6 +785,27 @@ class TelegramDestinatario(Base):
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id_subscription: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_usuario: Mapped[int] = mapped_column(ForeignKey("usuarios.id_usuario"), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(1000), nullable=False, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    last_success_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    usuario = relationship("Usuario", back_populates="push_subscriptions")
 
 
 class Incidencia(Base):

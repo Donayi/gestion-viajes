@@ -1,9 +1,11 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { BellRing, Menu, X } from "lucide-react";
+import { useState } from "react";
 
 import { LogoutButton } from "@/components/auth/logout-button";
 import { LocationStatusChip } from "@/components/location/location-status-chip";
+import { PushNotificationSettings } from "@/components/pwa/push-notification-settings";
 import { useSession } from "@/hooks/use-session";
 import { canSeeAdminNavigation, isMantenimiento, isOperador } from "@/lib/permissions";
 
@@ -12,6 +14,7 @@ export function AppTopbar({ onOpenAdminMenu }: { onOpenAdminMenu?: () => void })
   const operador = isOperador(user);
   const mantenimiento = isMantenimiento(user);
   const admin = canSeeAdminNavigation(user);
+  const [pushPanelOpen, setPushPanelOpen] = useState(false);
 
   return (
     <header
@@ -58,6 +61,26 @@ export function AppTopbar({ onOpenAdminMenu }: { onOpenAdminMenu?: () => void })
             <LocationStatusChip />
           </div>
         ) : null}
+        <div className="relative">
+          <button
+            aria-expanded={pushPanelOpen}
+            aria-label="Configurar notificaciones del dispositivo"
+            className={`inline-flex rounded-2xl border p-2 shadow-sm transition ${
+              operador || mantenimiento
+                ? "border-white/10 bg-white/10 text-white hover:bg-white/15 lg:border-slate-200 lg:bg-white lg:text-slate-700"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+            onClick={() => setPushPanelOpen((current) => !current)}
+            type="button"
+          >
+            {pushPanelOpen ? <X className="h-5 w-5" /> : <BellRing className="h-5 w-5" />}
+          </button>
+          {pushPanelOpen ? (
+            <div className="absolute right-0 top-14 z-40 w-[min(92vw,30rem)]">
+              <PushNotificationSettings compact />
+            </div>
+          ) : null}
+        </div>
         <div
           className={`hidden rounded-2xl px-4 py-2 text-right md:block ${
             operador || mantenimiento
