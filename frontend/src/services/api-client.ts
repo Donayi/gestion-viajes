@@ -36,7 +36,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
     if (isNetworkError) {
       throw new ApiError(
-        "No fue posible conectar con la API. Verifica que el backend esté levantado e inténtalo de nuevo.",
+        typeof window !== "undefined" && !window.navigator.onLine
+          ? "Sin conexión. Esta operación requiere internet."
+          : "No fue posible conectar con la API. Verifica que el backend esté levantado e inténtalo de nuevo.",
         0
       );
     }

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { OfflineStatusBanner } from "@/components/pwa/offline-status-banner";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 
 import "@/app/globals.css";
 
@@ -26,6 +28,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <AuthProvider>
           {children}
+          <ServiceWorkerRegister />
+          <OfflineStatusBanner />
           <InstallPrompt />
         </AuthProvider>
       </body>
