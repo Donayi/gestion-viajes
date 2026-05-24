@@ -1,11 +1,8 @@
-import base64
 import json
 import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session, joinedload
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
 
 from app.api.deps_auth import is_admin_role_name, is_mantenimiento_role_name, normalize_role_name
 from app.core.config import settings
@@ -27,28 +24,6 @@ def _push_enabled() -> bool:
         and settings.web_push_vapid_public_key
         and settings.web_push_vapid_private_key
     )
-
-
-def _decode_b64url(value: str) -> bytes:
-    padding = "=" * ((4 - len(value) % 4) % 4)
-    return base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
-
-
-def _get_vapid_private_key_pem() -> bytes | None:
-    if not settings.web_push_vapid_private_key:
-        return None
-
-    try:
-        private_bytes = _decode_b64url(settings.web_push_vapid_private_key)
-        private_int = int.from_bytes(private_bytes, "big")
-        private_key = ec.derive_private_key(private_int, ec.SECP256R1())
-        return private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        )
-    except Exception:
-        return None
 
 
 def _touch_subscription_success(subscription: PushSubscription) -> None:
@@ -140,15 +115,31 @@ def send_push_to_subscription(
                 )
             )
         return False
-    vapid_private_key = _get_vapid_private_key_pem()
-    if vapid_private_key is None:
+
+    if not settings.web_push_vapid_private_key:
         summary = _build_error_summary(
-            kind="invalid-vapid-private-key",
+            kind="missing-vapid-private-key",
             subscription=subscription,
-            detail="No fue posible derivar la VAPID private key",
+            detail="WEB_PUSH_VAPID_PRIVATE_KEY missing",
         )
         logger.error(
-            "Push VAPID key inválida | subscription=%s | user=%s | endpoint=%s",
+            "WEB_PUSH_VAPID_PRIVATE_KEY missing | subscription=%s | user=%s | endpoint=%s",
+            subscription.id_subscription,
+            subscription.id_usuario,
+            _mask_endpoint(subscription.endpoint),
+        )
+        if diagnostics is not None:
+            diagnostics.append(summary)
+        return False
+
+    if not settings.web_push_subject:
+        summary = _build_error_summary(
+            kind="missing-vapid-subject",
+            subscription=subscription,
+            detail="WEB_PUSH_SUBJECT missing",
+        )
+        logger.error(
+            "WEB_PUSH_SUBJECT missing | subscription=%s | user=%s | endpoint=%s",
             subscription.id_subscription,
             subscription.id_usuario,
             _mask_endpoint(subscription.endpoint),
@@ -166,6 +157,16 @@ def send_push_to_subscription(
         "data": data or {},
     }
 
+    logger.info(
+        "Sending Web Push | enabled=%s | has_private_key=%s | subject=%s | subscription=%s | user=%s | endpoint=%s",
+        settings.web_push_enabled,
+        bool(settings.web_push_vapid_private_key),
+        settings.web_push_subject,
+        subscription.id_subscription,
+        subscription.id_usuario,
+        _mask_endpoint(subscription.endpoint),
+    )
+
     try:
         webpush(
             subscription_info={
@@ -176,7 +177,7 @@ def send_push_to_subscription(
                 },
             },
             data=json.dumps(payload, ensure_ascii=False),
-            vapid_private_key=vapid_private_key,
+            vapid_private_key=settings.web_push_vapid_private_key,
             vapid_claims={"sub": settings.web_push_subject},
         )
         _touch_subscription_success(subscription)
