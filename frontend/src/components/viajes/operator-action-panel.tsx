@@ -3,8 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { EvidenceFilePicker } from "@/components/ui/evidence-file-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  formatFileSize,
+  prepareEvidenceFile,
+  revokePreparedEvidenceFile,
+  type PreparedEvidenceFile,
+} from "@/lib/evidence-files";
 import { getPendingStandbyRequest } from "@/components/viajes/workflow-helpers";
 import {
   getEvidenciasByViajeRequest,
@@ -116,12 +123,13 @@ const initialOperationalForm: OperationalFormState = {
 type ActionEvidenceDraft = {
   idTipoEvidencia: string;
   comentario: string;
-  file: File | null;
+  file: PreparedEvidenceFile | null;
 };
 
 type ActionEvidenceItem = {
   tempId: string;
   nombreArchivo: string;
+  fileSize: string;
   data: EvidenciaOperativaInput;
 };
 
@@ -260,6 +268,7 @@ export function OperatorActionPanel({
     setGeoMessage(null);
     setSuccessMessage(null);
     setEvidenceError(null);
+    revokePreparedEvidenceFile(actionEvidenceDraft.file);
     setOperationalForm(initialOperationalForm);
     setActionEvidenceDraft(initialEvidenceDraft);
     setActionEvidences([]);
@@ -268,6 +277,7 @@ export function OperatorActionPanel({
 
   function closeOperationalSheet() {
     if (loadingAction) return;
+    revokePreparedEvidenceFile(actionEvidenceDraft.file);
     setActiveAction(null);
     setLocalError(null);
     setGeoMessage(null);
@@ -380,18 +390,19 @@ export function OperatorActionPanel({
 
     try {
       const presign = await getPresignedUrlRequest({
-        filename: actionEvidenceDraft.file.name,
-        content_type: actionEvidenceDraft.file.type || "application/octet-stream",
-        size_bytes: actionEvidenceDraft.file.size,
+        filename: actionEvidenceDraft.file.file.name,
+        content_type: actionEvidenceDraft.file.file.type || "application/octet-stream",
+        size_bytes: actionEvidenceDraft.file.file.size,
       });
 
-      await uploadFileToR2(presign.upload_url, actionEvidenceDraft.file);
+      await uploadFileToR2(presign.upload_url, actionEvidenceDraft.file.file);
 
       setActionEvidences((current) => [
         ...current,
         {
           tempId: `${Date.now()}-${current.length}`,
-          nombreArchivo: actionEvidenceDraft.file?.name ?? "Archivo",
+          nombreArchivo: actionEvidenceDraft.file?.file.name ?? "Archivo",
+          fileSize: formatFileSize(actionEvidenceDraft.file?.file.size ?? 0),
           data: {
             id_tipo_evidencia: Number(actionEvidenceDraft.idTipoEvidencia),
             id_archivo: presign.id_archivo,
@@ -407,6 +418,7 @@ export function OperatorActionPanel({
         comentario: "",
         file: null,
       }));
+      revokePreparedEvidenceFile(actionEvidenceDraft.file);
     } catch (currentError) {
       setEvidenceError(
         currentError instanceof ApiError
@@ -422,6 +434,34 @@ export function OperatorActionPanel({
 
   function removeEvidence(tempId: string) {
     setActionEvidences((current) => current.filter((item) => item.tempId !== tempId));
+  }
+
+  async function handleDraftFileChange(file: File | null) {
+    setEvidenceError(null);
+
+    if (!file) {
+      revokePreparedEvidenceFile(actionEvidenceDraft.file);
+      setActionEvidenceDraft((current) => ({
+        ...current,
+        file: null,
+      }));
+      return;
+    }
+
+    try {
+      const preparedFile = await prepareEvidenceFile(file);
+      revokePreparedEvidenceFile(actionEvidenceDraft.file);
+      setActionEvidenceDraft((current) => ({
+        ...current,
+        file: preparedFile,
+      }));
+    } catch (currentError) {
+      setEvidenceError(
+        currentError instanceof Error
+          ? currentError.message
+          : "No fue posible preparar la imagen seleccionada."
+      );
+    }
   }
 
   function captureCurrentLocation(options?: { auto?: boolean }) {
@@ -478,6 +518,12 @@ export function OperatorActionPanel({
 
     void loadEvidenceContext();
   }, [activeAction]);
+
+  useEffect(() => {
+    return () => {
+      revokePreparedEvidenceFile(actionEvidenceDraft.file);
+    };
+  }, [actionEvidenceDraft.file]);
 
   return (
     <>
@@ -680,20 +726,14 @@ export function OperatorActionPanel({
                 </div>
 
                 <div className="mt-4 grid gap-4">
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-700">Archivo</span>
-                    <input
-                      accept="image/*,.pdf,.doc,.docx"
-                      className="block w-full rounded-[1.25rem] border border-slate-300 px-4 py-3 text-sm"
-                      onChange={(event) =>
-                        setActionEvidenceDraft((current) => ({
-                          ...current,
-                          file: event.target.files?.[0] ?? null,
-                        }))
-                      }
-                      type="file"
-                    />
-                  </label>
+                  <EvidenceFilePicker
+                    disabled={uploadingEvidence}
+                    helperText="En móvil se intentará abrir la cámara trasera. En escritorio puedes seleccionar una imagen manualmente."
+                    label="Foto de evidencia"
+                    mode="camera"
+                    onFileChange={(file) => void handleDraftFileChange(file)}
+                    selectedFile={actionEvidenceDraft.file}
+                  />
 
                   <label className="block space-y-2">
                     <span className="text-sm font-medium text-slate-700">Tipo de evidencia</span>
@@ -737,7 +777,7 @@ export function OperatorActionPanel({
                       type="button"
                       variant="secondary"
                     >
-                      {uploadingEvidence ? "Subiendo evidencia..." : "Agregar evidencia"}
+                      {uploadingEvidence ? "Subiendo..." : "Agregar evidencia"}
                     </Button>
                     {loadingExistingEvidencias ? (
                       <span className="text-sm text-slate-500">Revisando evidencias existentes...</span>
@@ -764,8 +804,12 @@ export function OperatorActionPanel({
                               <p className="text-xs text-slate-500">
                                 {tipo?.nombre ?? "Tipo seleccionado"}
                                 {item.data.comentario ? ` · ${item.data.comentario}` : ""}
+                                {item.fileSize ? ` · ${item.fileSize}` : ""}
                               </p>
                             </div>
+                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                              Completado
+                            </span>
                             <Button onClick={() => removeEvidence(item.tempId)} type="button" variant="ghost">
                               Quitar
                             </Button>

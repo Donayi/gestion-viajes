@@ -8,12 +8,18 @@ import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminTableShell } from "@/components/admin/admin-table-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EvidenceFilePicker } from "@/components/ui/evidence-file-picker";
 import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/ui/loading-state";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
 import { cn } from "@/lib/cn";
+import {
+  prepareEvidenceFile,
+  revokePreparedEvidenceFile,
+  type PreparedEvidenceFile,
+} from "@/lib/evidence-files";
 import { isAdmin, isMantenimiento } from "@/lib/permissions";
 import { ApiError } from "@/services/api-client";
 import { getPresignedUrlRequest, uploadFileToR2 } from "@/services/evidencias.service";
@@ -83,7 +89,7 @@ type ArchivoFormState = {
 
 type ChecklistEvidenceFormState = {
   comentario: string;
-  file: File | null;
+  file: PreparedEvidenceFile | null;
 };
 
 type MantenimientosWorkbenchProps = {
@@ -304,6 +310,12 @@ export function MantenimientosWorkbench({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      revokePreparedEvidenceFile(checklistEvidenceForm.file);
+    };
+  }, [checklistEvidenceForm.file]);
 
   const scopedMantenimientos = useMemo(() => {
     if (!maintenanceMode || !user) {
@@ -915,6 +927,34 @@ export function MantenimientosWorkbench({
     setChecklistEvidenceModalOpen(true);
   }
 
+  async function handleChecklistEvidenceFileChange(file: File | null) {
+    setChecklistEvidenceError(null);
+
+    if (!file) {
+      revokePreparedEvidenceFile(checklistEvidenceForm.file);
+      setChecklistEvidenceForm((current) => ({
+        ...current,
+        file: null,
+      }));
+      return;
+    }
+
+    try {
+      const preparedFile = await prepareEvidenceFile(file, { allowPdf: !maintenanceMode });
+      revokePreparedEvidenceFile(checklistEvidenceForm.file);
+      setChecklistEvidenceForm((current) => ({
+        ...current,
+        file: preparedFile,
+      }));
+    } catch (currentError) {
+      setChecklistEvidenceError(
+        currentError instanceof Error
+          ? currentError.message
+          : "No fue posible preparar la imagen seleccionada."
+      );
+    }
+  }
+
   async function handleChecklistEvidenceSubmit() {
     if (!selectedMaintenance || selectedChecklistItemForEvidence === null) {
       setChecklistEvidenceError("Selecciona un rubro del checklist antes de adjuntar evidencias");
@@ -933,31 +973,32 @@ export function MantenimientosWorkbench({
             comentario: checklistEvidenceForm.comentario.trim() || null,
           }
         );
-      } else {
-        if (!checklistEvidenceForm.file) {
-          throw new Error("Selecciona una foto o archivo para continuar");
-        }
-        const presign = await getPresignedUrlRequest({
-          filename: checklistEvidenceForm.file.name,
-          content_type: checklistEvidenceForm.file.type || "application/octet-stream",
-          size_bytes: checklistEvidenceForm.file.size,
-        });
-        await uploadFileToR2(presign.upload_url, checklistEvidenceForm.file);
-        await createChecklistItemEvidenciaRequest(
-          selectedMaintenance.id_mantenimiento,
-          selectedChecklistItemForEvidence,
-          {
+        } else {
+          if (!checklistEvidenceForm.file) {
+            throw new Error("Selecciona una foto o archivo para continuar");
+          }
+          const presign = await getPresignedUrlRequest({
+            filename: checklistEvidenceForm.file.file.name,
+            content_type: checklistEvidenceForm.file.file.type || "application/octet-stream",
+            size_bytes: checklistEvidenceForm.file.file.size,
+          });
+        await uploadFileToR2(presign.upload_url, checklistEvidenceForm.file.file);
+          await createChecklistItemEvidenciaRequest(
+            selectedMaintenance.id_mantenimiento,
+            selectedChecklistItemForEvidence,
+            {
             id_archivo: presign.id_archivo,
             comentario: checklistEvidenceForm.comentario.trim() || null,
           }
         );
       }
 
-      setChecklistEvidenceModalOpen(false);
-      setEditingChecklistEvidence(null);
-      setSelectedChecklistItemForEvidence(null);
-      setChecklistEvidenceForm(initialChecklistEvidenceForm);
-      await load();
+        setChecklistEvidenceModalOpen(false);
+        setEditingChecklistEvidence(null);
+        setSelectedChecklistItemForEvidence(null);
+        revokePreparedEvidenceFile(checklistEvidenceForm.file);
+        setChecklistEvidenceForm(initialChecklistEvidenceForm);
+        await load();
     } catch (currentError) {
       setChecklistEvidenceError(
         currentError instanceof ApiError
@@ -2227,6 +2268,7 @@ export function MantenimientosWorkbench({
           setChecklistEvidenceModalOpen(false);
           setSelectedChecklistItemForEvidence(null);
           setEditingChecklistEvidence(null);
+          revokePreparedEvidenceFile(checklistEvidenceForm.file);
           setChecklistEvidenceForm(initialChecklistEvidenceForm);
           setChecklistEvidenceError(null);
         }}
@@ -2241,25 +2283,26 @@ export function MantenimientosWorkbench({
             }
             readOnly
           />
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Archivo</span>
-            <input
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
-              type="file"
-              disabled={Boolean(editingChecklistEvidence)}
-              onChange={(event) =>
-                setChecklistEvidenceForm((current) => ({
-                  ...current,
-                  file: event.target.files?.[0] ?? null,
-                }))
-              }
-            />
+          <div className="block space-y-2">
             {editingChecklistEvidence ? (
               <p className="text-xs text-slate-500">
                 El reemplazo físico del archivo no está habilitado; aquí puedes editar el comentario.
               </p>
-            ) : null}
-          </label>
+            ) : (
+              <EvidenceFilePicker
+                disabled={false}
+                helperText={
+                  maintenanceMode
+                    ? "En móvil se intentará abrir la cámara trasera para registrar evidencia del checklist."
+                    : "Puedes seleccionar imágenes guardadas o PDFs. No se forzará la cámara."
+                }
+                label={maintenanceMode ? "Foto de evidencia" : "Archivo de evidencia"}
+                mode={maintenanceMode ? "camera" : "file"}
+                onFileChange={(file) => void handleChecklistEvidenceFileChange(file)}
+                selectedFile={checklistEvidenceForm.file}
+              />
+            )}
+          </div>
         </div>
 
         <Textarea
@@ -2291,15 +2334,16 @@ export function MantenimientosWorkbench({
                 : "Guardar evidencia"}
           </Button>
           <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setChecklistEvidenceModalOpen(false);
-              setSelectedChecklistItemForEvidence(null);
-              setEditingChecklistEvidence(null);
-              setChecklistEvidenceForm(initialChecklistEvidenceForm);
-              setChecklistEvidenceError(null);
-            }}
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setChecklistEvidenceModalOpen(false);
+                setSelectedChecklistItemForEvidence(null);
+                setEditingChecklistEvidence(null);
+                revokePreparedEvidenceFile(checklistEvidenceForm.file);
+                setChecklistEvidenceForm(initialChecklistEvidenceForm);
+                setChecklistEvidenceError(null);
+              }}
           >
             Cancelar
           </Button>

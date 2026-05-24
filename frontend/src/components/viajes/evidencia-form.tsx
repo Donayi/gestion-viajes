@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useSession } from "@/hooks/use-session";
+import { isAdmin, isOperador } from "@/lib/permissions";
 import {
   createEvidenciaRequest,
   getPresignedUrlRequest,
@@ -11,9 +12,14 @@ import {
 } from "@/services/evidencias.service";
 import type { TipoEvidencia } from "@/types/evidencia";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { EvidenceFilePicker } from "@/components/ui/evidence-file-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/services/api-client";
+import {
+  prepareEvidenceFile,
+  revokePreparedEvidenceFile,
+  type PreparedEvidenceFile,
+} from "@/lib/evidence-files";
 
 export function EvidenciaForm({
   viajeId,
@@ -23,8 +29,10 @@ export function EvidenciaForm({
   onSuccess: () => Promise<void>;
 }) {
   const { user } = useSession();
+  const adminUser = isAdmin(user);
+  const operadorUser = isOperador(user);
   const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<PreparedEvidenceFile | null>(null);
   const [comentario, setComentario] = useState("");
   const [tipos, setTipos] = useState<TipoEvidencia[]>([]);
   const [selectedTipo, setSelectedTipo] = useState<string>("");
@@ -33,18 +41,11 @@ export function EvidenciaForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const previewUrl = useMemo(() => {
-    if (!file || !file.type.startsWith("image/")) return null;
-    return URL.createObjectURL(file);
-  }, [file]);
-
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
+      revokePreparedEvidenceFile(file);
     };
-  }, [previewUrl]);
+  }, [file]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,12 +97,12 @@ export function EvidenciaForm({
 
     try {
       const presign = await getPresignedUrlRequest({
-        filename: file.name,
-        content_type: file.type || "application/octet-stream",
-        size_bytes: file.size
+        filename: file.file.name,
+        content_type: file.file.type || "application/octet-stream",
+        size_bytes: file.file.size
       });
 
-      await uploadFileToR2(presign.upload_url, file);
+      await uploadFileToR2(presign.upload_url, file.file);
 
       await createEvidenciaRequest(viajeId, {
         id_tipo_evidencia: Number(selectedTipo),
@@ -112,6 +113,7 @@ export function EvidenciaForm({
 
       setSuccess("Evidencia subida correctamente");
       setComentario("");
+      revokePreparedEvidenceFile(file);
       setFile(null);
       await onSuccess();
       setTimeout(() => {
@@ -124,6 +126,28 @@ export function EvidenciaForm({
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFileChange(nextFile: File | null) {
+    setError(null);
+
+    if (!nextFile) {
+      revokePreparedEvidenceFile(file);
+      setFile(null);
+      return;
+    }
+
+    try {
+      const preparedFile = await prepareEvidenceFile(nextFile, { allowPdf: adminUser });
+      revokePreparedEvidenceFile(file);
+      setFile(preparedFile);
+    } catch (currentError) {
+      setError(
+        currentError instanceof Error
+          ? currentError.message
+          : "No fue posible preparar la imagen seleccionada."
+      );
     }
   }
 
@@ -158,25 +182,18 @@ export function EvidenciaForm({
         </div>
 
         <div className="mt-5 space-y-4">
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-slate-700">Archivo</span>
-            <input
-              accept="image/*,.pdf,.doc,.docx"
-              className="block w-full rounded-[1.25rem] border border-slate-300 px-4 py-3 text-sm"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              type="file"
-            />
-          </label>
-
-          {previewUrl ? (
-            <Card className="overflow-hidden rounded-[1.5rem]">
-              <img alt="Preview de evidencia" className="h-64 w-full object-cover" src={previewUrl} />
-            </Card>
-          ) : file ? (
-            <Card className="rounded-[1.5rem] p-4 text-sm text-slate-700">
-              Archivo seleccionado: <span className="font-semibold">{file.name}</span>
-            </Card>
-          ) : null}
+          <EvidenceFilePicker
+            disabled={loading}
+            helperText={
+              adminUser
+                ? "Puedes seleccionar imágenes guardadas o PDFs. No se forzará la cámara."
+                : "En celular se intentará abrir la cámara trasera. En escritorio puedes seleccionar una imagen."
+            }
+            label={adminUser ? "Archivo de evidencia" : "Foto de evidencia"}
+            mode={adminUser ? "file" : operadorUser ? "camera" : "mixed"}
+            onFileChange={(nextFile) => void handleFileChange(nextFile)}
+            selectedFile={file}
+          />
 
           <label className="block space-y-2">
             <span className="text-sm font-medium text-slate-700">Tipo de evidencia</span>
