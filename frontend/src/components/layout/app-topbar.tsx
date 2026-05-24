@@ -76,7 +76,7 @@ export function AppTopbar({ onOpenAdminMenu }: { onOpenAdminMenu?: () => void })
             {pushPanelOpen ? <X className="h-5 w-5" /> : <BellRing className="h-5 w-5" />}
           </button>
           {pushPanelOpen ? (
-            <div className="absolute right-0 top-14 z-40 w-[min(92vw,30rem)]">
+            <div className="fixed inset-x-3 top-20 z-50 w-[calc(100vw-1.5rem)] max-w-none sm:inset-x-auto sm:right-6 sm:w-96 lg:absolute lg:right-0 lg:top-14 lg:w-[min(92vw,30rem)]">
               <PushNotificationSettings compact />
             </div>
           ) : null}
