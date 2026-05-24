@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session, joinedload
@@ -15,6 +16,9 @@ try:
 except ImportError:  # pragma: no cover - runtime fallback when dependency is missing
     WebPushException = Exception
     webpush = None
+
+
+logger = logging.getLogger(__name__)
 
 
 def _push_enabled() -> bool:
@@ -70,6 +74,50 @@ def _build_url(path: str | None) -> str | None:
     return f"{app_url}{path if path.startswith('/') else f'/{path}'}"
 
 
+def _mask_endpoint(endpoint: str | None) -> str:
+    if not endpoint:
+        return "sin-endpoint"
+    if len(endpoint) <= 48:
+        return endpoint
+    return f"{endpoint[:24]}...{endpoint[-16:]}"
+
+
+def _extract_error_body(response: object | None) -> str | None:
+    if response is None:
+        return None
+
+    text = getattr(response, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()[:300]
+
+    content = getattr(response, "content", None)
+    if isinstance(content, bytes) and content:
+        try:
+            return content.decode("utf-8", errors="ignore").strip()[:300]
+        except Exception:
+            return None
+
+    return None
+
+
+def _build_error_summary(
+    *,
+    kind: str,
+    subscription: PushSubscription,
+    status_code: int | None = None,
+    detail: str | None = None,
+    exception_message: str | None = None,
+) -> str:
+    parts = [f"{kind} subscription={subscription.id_subscription}", f"user={subscription.id_usuario}"]
+    if status_code is not None:
+        parts.append(f"status={status_code}")
+    if detail:
+        parts.append(f"detail={detail}")
+    elif exception_message:
+        parts.append(f"detail={exception_message}")
+    return " | ".join(parts)
+
+
 def send_push_to_subscription(
     db: Session,
     subscription: PushSubscription,
@@ -80,11 +128,33 @@ def send_push_to_subscription(
     data: dict[str, object] | None = None,
     tag: str | None = None,
     notification_type: str | None = None,
+    diagnostics: list[str] | None = None,
 ) -> bool:
     if not _push_enabled() or webpush is None or not subscription.activo:
+        if diagnostics is not None:
+            diagnostics.append(
+                _build_error_summary(
+                    kind="push-disabled",
+                    subscription=subscription,
+                    detail="Push deshabilitado, sin pywebpush o suscripción inactiva",
+                )
+            )
         return False
     vapid_private_key = _get_vapid_private_key_pem()
     if vapid_private_key is None:
+        summary = _build_error_summary(
+            kind="invalid-vapid-private-key",
+            subscription=subscription,
+            detail="No fue posible derivar la VAPID private key",
+        )
+        logger.error(
+            "Push VAPID key inválida | subscription=%s | user=%s | endpoint=%s",
+            subscription.id_subscription,
+            subscription.id_usuario,
+            _mask_endpoint(subscription.endpoint),
+        )
+        if diagnostics is not None:
+            diagnostics.append(summary)
         return False
 
     payload = {
@@ -113,14 +183,92 @@ def send_push_to_subscription(
         db.commit()
         return True
     except WebPushException as exc:  # pragma: no cover - depends on external service
-        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        body = _extract_error_body(response)
+        summary = _build_error_summary(
+            kind="webpush-error",
+            subscription=subscription,
+            status_code=status_code,
+            detail=body,
+            exception_message=str(exc),
+        )
+        logger.warning(
+            "WebPushException | subscription=%s | user=%s | endpoint=%s | status=%s | body=%s | error=%s",
+            subscription.id_subscription,
+            subscription.id_usuario,
+            _mask_endpoint(subscription.endpoint),
+            status_code,
+            body,
+            str(exc),
+        )
+        if diagnostics is not None:
+            diagnostics.append(summary)
         _touch_subscription_failure(subscription, deactivate=status_code in {404, 410})
         db.commit()
         return False
     except Exception:  # pragma: no cover - depends on external service
+        summary = _build_error_summary(
+            kind="push-error",
+            subscription=subscription,
+            exception_message="Error inesperado durante el envío push",
+        )
+        logger.exception(
+            "Push send failed | subscription=%s | user=%s | endpoint=%s",
+            subscription.id_subscription,
+            subscription.id_usuario,
+            _mask_endpoint(subscription.endpoint),
+        )
+        if diagnostics is not None:
+            diagnostics.append(summary)
         _touch_subscription_failure(subscription)
         db.commit()
         return False
+
+
+def send_push_to_user_detailed(
+    db: Session,
+    id_usuario: int,
+    title: str,
+    body: str,
+    url: str | None = None,
+    data: dict[str, object] | None = None,
+    tag: str | None = None,
+    notification_type: str | None = None,
+) -> dict[str, object]:
+    subscriptions = (
+        db.query(PushSubscription)
+        .filter(
+            PushSubscription.id_usuario == id_usuario,
+            PushSubscription.activo.is_(True),
+        )
+        .order_by(PushSubscription.updated_at.desc(), PushSubscription.id_subscription.desc())
+        .all()
+    )
+
+    diagnostics: list[str] = []
+    success_count = 0
+    for subscription in subscriptions:
+        if send_push_to_subscription(
+            db,
+            subscription,
+            title=title,
+            body=body,
+            url=url,
+            data=data,
+            tag=tag,
+            notification_type=notification_type,
+            diagnostics=diagnostics,
+        ):
+            success_count += 1
+
+    return {
+        "enviado": success_count > 0,
+        "total_subscriptions": len(subscriptions),
+        "success_count": success_count,
+        "failure_count": max(len(subscriptions) - success_count, 0),
+        "errores_resumidos": diagnostics,
+    }
 
 
 def send_push_to_user(
@@ -133,33 +281,17 @@ def send_push_to_user(
     tag: str | None = None,
     notification_type: str | None = None,
 ) -> bool:
-    if not _push_enabled():
-        return False
-
-    subscriptions = (
-        db.query(PushSubscription)
-        .filter(
-            PushSubscription.id_usuario == id_usuario,
-            PushSubscription.activo.is_(True),
-        )
-        .order_by(PushSubscription.updated_at.desc(), PushSubscription.id_subscription.desc())
-        .all()
+    result = send_push_to_user_detailed(
+        db,
+        id_usuario,
+        title,
+        body,
+        url=url,
+        data=data,
+        tag=tag,
+        notification_type=notification_type,
     )
-
-    sent_any = False
-    for subscription in subscriptions:
-        if send_push_to_subscription(
-            db,
-            subscription,
-            title=title,
-            body=body,
-            url=url,
-            data=data,
-            tag=tag,
-            notification_type=notification_type,
-        ):
-            sent_any = True
-    return sent_any
+    return bool(result["enviado"])
 
 
 def send_push_to_role(

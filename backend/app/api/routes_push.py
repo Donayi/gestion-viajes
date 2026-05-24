@@ -12,7 +12,7 @@ from app.schemas.push import (
     PushTestResponse,
     PushUnsubscribeRequest,
 )
-from app.services.push_service import send_push_to_user
+from app.services.push_service import send_push_to_user, send_push_to_user_detailed
 
 
 router = APIRouter(prefix="/push", tags=["Push Notifications"])
@@ -99,7 +99,7 @@ def send_push_test_current_user(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user),
 ):
-    sent = send_push_to_user(
+    result = send_push_to_user_detailed(
         db,
         current_user.id_usuario,
         "DAFREQ listo para notificar",
@@ -110,8 +110,12 @@ def send_push_test_current_user(
         notification_type="PUSH_TEST",
     )
     return PushTestResponse(
-        enviado=sent,
-        mensaje="Push de prueba enviado" if sent else "No fue posible enviar el push de prueba",
+        enviado=bool(result["enviado"]),
+        mensaje="Push de prueba enviado" if result["enviado"] else "No fue posible enviar el push de prueba",
+        total_subscriptions=int(result["total_subscriptions"]),
+        success_count=int(result["success_count"]),
+        failure_count=int(result["failure_count"]),
+        errores_resumidos=list(result["errores_resumidos"]),
     )
 
 
@@ -125,7 +129,7 @@ def send_push_test_specific_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
 
-    sent = send_push_to_user(
+    result = send_push_to_user_detailed(
         db,
         id_usuario,
         "Prueba administrativa DAFREQ",
@@ -136,6 +140,10 @@ def send_push_test_specific_user(
         notification_type="PUSH_TEST",
     )
     return PushTestResponse(
-        enviado=sent,
-        mensaje="Push de prueba enviado" if sent else "No fue posible enviar el push de prueba",
+        enviado=bool(result["enviado"]),
+        mensaje="Push de prueba enviado" if result["enviado"] else "No fue posible enviar el push de prueba",
+        total_subscriptions=int(result["total_subscriptions"]),
+        success_count=int(result["success_count"]),
+        failure_count=int(result["failure_count"]),
+        errores_resumidos=list(result["errores_resumidos"]),
     )

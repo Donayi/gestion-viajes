@@ -45,4 +45,7 @@ class PushStatusResponse(BaseModel):
 class PushTestResponse(BaseModel):
     enviado: bool
     mensaje: str
-
+    total_subscriptions: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    errores_resumidos: list[str] = []
