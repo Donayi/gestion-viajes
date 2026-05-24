@@ -49,6 +49,7 @@ export function LoginForm() {
         />
         <Input
           label="Contrasena"
+          allowPasswordToggle
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
