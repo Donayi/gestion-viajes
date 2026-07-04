@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,35 @@ class Settings(BaseSettings):
     web_push_vapid_public_key: str | None = None
     web_push_vapid_private_key: str | None = None
     web_push_subject: str = "mailto:admin@dafreqlogistica.com"
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def parse_cors_allowed_origins(cls, value: str | list[str] | None) -> list[str]:
+        if value is None:
+            return [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ]
+        if isinstance(value, list):
+            return [item.strip() for item in value if item and item.strip()]
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return [
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                ]
+            if stripped.startswith("["):
+                import json
+
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
 
     model_config = SettingsConfigDict(
         env_file=".env",

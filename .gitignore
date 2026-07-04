@@ -19,9 +19,13 @@ env/
 .env
 .env.*
 !.env.example
+!frontend/.env.example
+!backend/.env.example
+!infra/.env.example
 
 # Logs
 *.log
+logs/
 
 # VS Code / IDE
 .vscode/
@@ -46,3 +50,23 @@ frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/.env.local
+
+# Infra envs
+infra/.env
+infra/.env.*
+!infra/.env.example
+
+# Backend envs
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Backups y dumps
+*.sql
+*.sql.gz
+*.dump
+*.tar
+*.tar.gz
+*.zip
+*_backup_*
+_resguardo_no_deploy/
