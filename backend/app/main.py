@@ -28,19 +28,17 @@ from app.seeds.seed_viajes import run_seed_viajes
 import app.models  # noqa: F401
 
 
-app = FastAPI(title=settings.app_name)
+def configure_cors(app: FastAPI) -> None:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-
-@app.on_event("startup")
-def on_startup():
+def run_schema_bootstrap() -> None:
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         connection.exec_driver_sql(
@@ -271,6 +269,8 @@ def on_startup():
             "UPDATE push_subscriptions SET failure_count = 0 WHERE failure_count IS NULL"
         )
 
+
+def run_seed_bootstrap() -> None:
     db: Session = SessionLocal()
     try:
         run_seed_roles(db)
@@ -281,22 +281,43 @@ def on_startup():
         db.close()
 
 
-app.include_router(health_router)
-app.include_router(auth_router)
-app.include_router(evidencias_router)
-app.include_router(documentos_router)
-app.include_router(alertas_router)
-app.include_router(kpis_router)
-app.include_router(mantenimientos_router)
-app.include_router(push_router)
-app.include_router(telegram_router)
-app.include_router(roles_router)
-app.include_router(usuarios_router)
-app.include_router(operadores_router)
-app.include_router(clientes_router)
-app.include_router(trailers_router)
-app.include_router(cajas_router)
-app.include_router(viajes_router)
+def run_startup_tasks() -> None:
+    run_schema_bootstrap()
+    run_seed_bootstrap()
+
+
+def register_routers(app: FastAPI) -> None:
+    app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(evidencias_router)
+    app.include_router(documentos_router)
+    app.include_router(alertas_router)
+    app.include_router(kpis_router)
+    app.include_router(mantenimientos_router)
+    app.include_router(push_router)
+    app.include_router(telegram_router)
+    app.include_router(roles_router)
+    app.include_router(usuarios_router)
+    app.include_router(operadores_router)
+    app.include_router(clientes_router)
+    app.include_router(trailers_router)
+    app.include_router(cajas_router)
+    app.include_router(viajes_router)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.app_name)
+    configure_cors(app)
+
+    @app.on_event("startup")
+    def on_startup() -> None:
+        run_startup_tasks()
+
+    register_routers(app)
+    return app
+
+
+app = create_app()
 
 
 @app.get("/")
