@@ -1,9 +1,11 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     app_name: str = "Gestión de Viajes API"
+    app_env: str = "development"
+    environment: str | None = None
     database_url: str
     strict_evidence_validation: bool = False
     secret_key: str = "change-me-in-production"
@@ -58,6 +60,37 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ]
+
+    @staticmethod
+    def _normalize_environment(value: str | None) -> str:
+        return (value or "").strip().lower()
+
+    def is_production_environment(self) -> bool:
+        return "production" in {
+            self._normalize_environment(self.app_env),
+            self._normalize_environment(self.environment),
+        }
+
+    def validate_runtime_config(self) -> "Settings":
+        if not self.is_production_environment():
+            return self
+
+        normalized_secret = (self.secret_key or "").strip()
+        if (
+            not normalized_secret
+            or normalized_secret == "change-me-in-production"
+            or len(normalized_secret) < 32
+        ):
+            raise ValueError(
+                "SECRET_KEY insegura para producción. Configura una clave no vacía, "
+                "distinta al valor por defecto y de al menos 32 caracteres."
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_runtime_config_model(self) -> "Settings":
+        return self.validate_runtime_config()
 
     model_config = SettingsConfigDict(
         env_file=".env",
