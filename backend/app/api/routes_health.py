@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.api.deps_auth import require_admin
 from app.db.deps import get_db
 
 router = APIRouter(tags=["Health"])
@@ -12,7 +13,10 @@ def health():
 
 
 @router.get("/db/ping")
-def db_ping(db: Session = Depends(get_db)):
+def db_ping(
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
     result = db.execute(text("SELECT 1 AS ok"))
     row = result.fetchone()
 
