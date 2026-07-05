@@ -30,12 +30,21 @@ def create_new_cliente(
 
 
 @router.get("/", response_model=list[ClienteResponse])
-def list_clientes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_clientes(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_clientes(db, skip=skip, limit=limit)
 
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)
-def get_cliente(cliente_id: int, db: Session = Depends(get_db)):
+def get_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_cliente = get_cliente_by_id(db, cliente_id)
     if not db_cliente:
         raise HTTPException(

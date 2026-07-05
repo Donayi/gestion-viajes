@@ -47,12 +47,21 @@ def create_new_caja(
 
 
 @router.get("/", response_model=list[CajaResponse])
-def list_cajas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_cajas(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_cajas(db, skip=skip, limit=limit)
 
 
 @router.get("/{caja_id}", response_model=CajaResponse)
-def get_caja(caja_id: int, db: Session = Depends(get_db)):
+def get_caja(
+    caja_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_caja = get_caja_by_id(db, caja_id)
     if not db_caja:
         raise HTTPException(

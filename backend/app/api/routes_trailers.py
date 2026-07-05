@@ -46,12 +46,21 @@ def create_new_trailer(
 
 
 @router.get("/", response_model=list[TrailerResponse])
-def list_trailers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_trailers(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_trailers(db, skip=skip, limit=limit)
 
 
 @router.get("/{trailer_id}", response_model=TrailerResponse)
-def get_trailer(trailer_id: int, db: Session = Depends(get_db)):
+def get_trailer(
+    trailer_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_trailer = get_trailer_by_id(db, trailer_id)
     if not db_trailer:
         raise HTTPException(

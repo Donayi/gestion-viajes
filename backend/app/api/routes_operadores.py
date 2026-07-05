@@ -45,12 +45,21 @@ def create_new_operador(
 
 
 @router.get("/", response_model=list[OperadorResponse])
-def list_operadores(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_operadores(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     return get_operadores(db, skip=skip, limit=limit)
 
 
 @router.get("/{operador_id}", response_model=OperadorResponse)
-def get_operador(operador_id: int, db: Session = Depends(get_db)):
+def get_operador(
+    operador_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
     db_operador = get_operador_by_id(db, operador_id)
     if not db_operador:
         raise HTTPException(
