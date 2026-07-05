@@ -36,6 +36,15 @@ def bootstrap_admin(
             detail="Ya existe un usuario administrador. El bootstrap inicial ya no esta disponible",
         )
 
+    if not settings.bootstrap_admin_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "El bootstrap inicial de administrador está deshabilitado. "
+                "Activa BOOTSTRAP_ADMIN_ENABLED=true para permitir esta operación."
+            ),
+        )
+
     try:
         user = create_bootstrap_admin(db, bootstrap_in)
     except ValueError as exc:

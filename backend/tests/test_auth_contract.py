@@ -156,3 +156,91 @@ def test_auth_me_with_invalid_token_returns_401(app):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "No fue posible validar las credenciales"
+
+
+def test_bootstrap_admin_blocked_by_default(app, monkeypatch):
+    from app.api import routes_auth
+
+    _override_db(app)
+    monkeypatch.setattr(routes_auth, "admin_exists", lambda db: False)
+    monkeypatch.setattr(routes_auth.settings, "bootstrap_admin_enabled", False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/auth/bootstrap-admin",
+        json={
+            "username": "AdminGeneral",
+            "password": "secreto123",
+            "nombre": "Admin",
+            "apellido": "General",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "El bootstrap inicial de administrador está deshabilitado. "
+        "Activa BOOTSTRAP_ADMIN_ENABLED=true para permitir esta operación."
+    )
+
+
+def test_bootstrap_admin_allowed_when_flag_enabled(app, monkeypatch):
+    from app.api import routes_auth
+
+    _override_db(app)
+    monkeypatch.setattr(routes_auth, "admin_exists", lambda db: False)
+    monkeypatch.setattr(routes_auth.settings, "bootstrap_admin_enabled", True)
+    monkeypatch.setattr(
+        routes_auth,
+        "create_bootstrap_admin",
+        lambda db, bootstrap_in: _build_user(),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/auth/bootstrap-admin",
+        json={
+            "username": "AdminGeneral",
+            "password": "secreto123",
+            "nombre": "Admin",
+            "apellido": "General",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "id_usuario": 1,
+        "username": "AdminGeneral",
+        "nombre": "Admin",
+        "apellido": "General",
+        "rol": "ADMIN",
+    }
+
+
+def test_bootstrap_admin_keeps_existing_admin_behavior(app, monkeypatch):
+    from app.api import routes_auth
+
+    _override_db(app)
+    monkeypatch.setattr(routes_auth, "admin_exists", lambda db: True)
+    monkeypatch.setattr(routes_auth.settings, "bootstrap_admin_enabled", False)
+    client = TestClient(app)
+
+    response = client.post(
+        "/auth/bootstrap-admin",
+        json={
+            "username": "AdminGeneral",
+            "password": "secreto123",
+            "nombre": "Admin",
+            "apellido": "General",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Ya existe un usuario administrador. El bootstrap inicial ya no esta disponible"
+    )

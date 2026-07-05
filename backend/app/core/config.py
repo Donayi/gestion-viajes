@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     environment: str | None = None
     database_url: str
     strict_evidence_validation: bool = False
+    bootstrap_admin_enabled: bool = False
     secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
