@@ -5,6 +5,7 @@ from app.api.routes_auth import router as auth_router
 from app.api.routes_cajas import router as cajas_router
 from app.api.routes_clientes import router as clientes_router
 from app.api.routes_documentos import router as documentos_router
+from app.api.routes_dashboard import router as dashboard_router
 from app.api.routes_evidencias import router as evidencias_router
 from app.api.routes_health import router as health_router
 from app.api.routes_kpis import router as kpis_router
@@ -23,6 +24,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(evidencias_router)
     app.include_router(documentos_router)
+    app.include_router(dashboard_router)
     app.include_router(alertas_router)
     app.include_router(kpis_router)
     app.include_router(mantenimientos_router)
@@ -35,4 +37,3 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(trailers_router)
     app.include_router(cajas_router)
     app.include_router(viajes_router)
-
