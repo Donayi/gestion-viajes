@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Button } from "@/components/ui/button";
@@ -15,18 +16,6 @@ import { ApiError } from "@/services/api-client";
 import { getAdminDashboardRequest } from "@/services/dashboard.service";
 import type { CurrentUser } from "@/types/auth";
 import type { AdminDashboardResponse } from "@/types/dashboard";
-
-function formatDateTime(value: string) {
-  const parsedDate = new Date(value);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return "Sin fecha disponible";
-  }
-
-  return parsedDate.toLocaleString("es-MX", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -85,8 +74,10 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
   const mountedRef = useRef(true);
   const activeControllerRef = useRef<AbortController | null>(null);
   const latestRequestIdRef = useRef(0);
+  const dashboardRef = useRef<AdminDashboardResponse | null>(null);
   const [dashboard, setDashboard] = useState<AdminDashboardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,8 +95,12 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
     activeControllerRef.current = controller;
     const requestId = latestRequestIdRef.current + 1;
     latestRequestIdRef.current = requestId;
+    const hasCurrentDashboard = dashboardRef.current !== null;
 
-    setLoading(true);
+    setRefreshing(true);
+    if (!hasCurrentDashboard) {
+      setInitialLoading(true);
+    }
     setError(null);
 
     try {
@@ -117,6 +112,7 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
       ) {
         return;
       }
+      dashboardRef.current = data;
       setDashboard(data);
     } catch (currentError) {
       if (
@@ -136,7 +132,10 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
         activeControllerRef.current = null;
       }
       if (mountedRef.current && latestRequestIdRef.current === requestId) {
-        setLoading(false);
+        setRefreshing(false);
+        if (!hasCurrentDashboard) {
+          setInitialLoading(false);
+        }
       }
     }
   }, []);
@@ -145,7 +144,7 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
     void load();
   }, [load]);
 
-  if (loading) {
+  if (initialLoading && !dashboard) {
     return <LoadingState label="Cargando dashboard administrativo..." />;
   }
 
@@ -166,48 +165,13 @@ function AdminDashboardContainer({ user }: { user: CurrentUser | null }) {
     );
   }
 
-  const emptyDashboard =
-    dashboard.viajes_resumen.total === 0 &&
-    dashboard.alertas.pendientes_total === 0 &&
-    dashboard.mantenimientos.abiertos_total === 0;
-
   return (
-    <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-        <StatCard label="Total de viajes" value={dashboard.viajes_resumen.total} />
-        <StatCard label="Viajes activos" value={dashboard.viajes_resumen.activos} />
-        <StatCard label="Viajes finalizados" value={dashboard.viajes_resumen.finalizados} />
-        <StatCard label="Alertas pendientes" value={dashboard.alertas.pendientes_total} />
-        <StatCard label="Mantenimientos abiertos" value={dashboard.mantenimientos.abiertos_total} />
-        <StatCard
-          label="Operadores disponibles"
-          value={dashboard.disponibilidad.operadores.disponibles}
-        />
-      </section>
-
-      <Card className="p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-700">
-          Sesion actual
-        </p>
-        <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-          {user?.nombre} {user?.apellido}
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Usuario: {user?.username} · Rol: {user?.rol}
-        </p>
-        <p className="mt-4 text-sm text-slate-500">
-          Ultima actualizacion: {formatDateTime(dashboard.generated_at)}
-        </p>
-      </Card>
-
-      {emptyDashboard ? (
-        <Card className="p-6">
-          <p className="text-sm text-slate-600">
-            Aun no hay actividad operativa para mostrar en el dashboard administrativo.
-          </p>
-        </Card>
-      ) : null}
-    </div>
+    <AdminDashboard
+      dashboard={dashboard}
+      onRefresh={() => void load()}
+      refreshing={refreshing}
+      user={user}
+    />
   );
 }
 

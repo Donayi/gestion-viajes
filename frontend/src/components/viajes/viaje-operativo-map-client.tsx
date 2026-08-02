@@ -82,9 +82,11 @@ function FitBounds({ points }: { points: LatLngTuple[] }) {
 }
 
 export function ViajeOperativoMapClient({
-  viajes
+  viajes,
+  compact = false,
 }: {
   viajes: ViajeMapaItem[];
+  compact?: boolean;
 }) {
   const viajesConUbicacion = useMemo<GeoViaje[]>(
     () =>
@@ -106,6 +108,9 @@ export function ViajeOperativoMapClient({
   );
 
   const points = viajesConUbicacion.map((viaje) => [viaje.lat, viaje.lng] as LatLngTuple);
+  const containerClassName = compact
+    ? "[&_.leaflet-control-attribution]:max-w-[calc(100%-0.75rem)] [&_.leaflet-control-attribution]:whitespace-normal [&_.leaflet-control-attribution]:rounded-tl-md [&_.leaflet-control-attribution]:px-2 [&_.leaflet-control-attribution]:py-1 [&_.leaflet-control-attribution]:text-[10px] [&_.leaflet-control-attribution]:leading-tight"
+    : "";
 
   if (viajesConUbicacion.length === 0) {
     return (
@@ -116,8 +121,13 @@ export function ViajeOperativoMapClient({
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.75rem] border border-slate-200">
-      <MapContainer center={points[0] ?? DEFAULT_CENTER} className="h-[60vh] min-h-[420px] w-full" scrollWheelZoom zoom={6}>
+    <div className={`overflow-hidden rounded-[1.75rem] border border-slate-200 ${containerClassName}`}>
+      <MapContainer
+        center={points[0] ?? DEFAULT_CENTER}
+        className={compact ? "h-[420px] min-h-[360px] w-full" : "h-[60vh] min-h-[420px] w-full"}
+        scrollWheelZoom
+        zoom={6}
+      >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

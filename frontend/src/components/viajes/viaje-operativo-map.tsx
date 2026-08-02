@@ -18,9 +18,11 @@ const ViajeOperativoMapClient = dynamic(
 );
 
 export function ViajeOperativoMap({
-  viajes
+  viajes,
+  compact = false,
 }: {
   viajes: ViajeMapaItem[];
+  compact?: boolean;
 }) {
-  return <ViajeOperativoMapClient viajes={viajes} />;
+  return <ViajeOperativoMapClient compact={compact} viajes={viajes} />;
 }
