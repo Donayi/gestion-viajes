@@ -65,7 +65,7 @@ No se encontraron otros perfiles funcionales implementados.
 
 ## Estado actual
 
-Aplicación full-stack funcional, con API, interfaz protegida por roles, persistencia relacional, PWA, dashboard administrativo y de operador, mapas, mantenimiento, documentos, alertas e integraciones opcionales. Hay pruebas de contrato y smoke en el repositorio, pero no se ejecutaron para elaborar este documento. No hay sistema de migraciones versionadas; el esquema se crea y ajusta en el arranque. Existen áreas parciales indicadas en [Pendientes técnicos](#pendientes-técnicos).
+Aplicación full-stack funcional, con API, interfaz protegida por roles, persistencia relacional, PWA, dashboard administrativo y de operador, mapas, mantenimiento, documentos, alertas e integraciones opcionales. La suite backend contiene pruebas de contrato, seguridad, smoke y persistencia aislada en PostgreSQL. Los cambios incluidos en el commit `baf5a31` fueron validados antes de crear el commit mediante `infra/compose.test.yml`, con resultado de 128 pruebas aprobadas, 0 fallidas y 0 errores. No hay sistema de migraciones versionadas; el esquema se crea y ajusta en el arranque. Existen áreas parciales indicadas en [Pendientes técnicos](#pendientes-técnicos).
 
 ---
 
@@ -255,7 +255,11 @@ Las transiciones se almacenan en `transiciones_estatus_viaje`; algunas exigen co
 - El operador puede solicitar standby; administración autoriza la solicitud. Se impiden solicitudes pendientes duplicadas.
 - Las acciones capturan eventos operativos: `INICIO_CARGA`, `INICIO_VIAJE`, `RETRASO`, `STANDBY` y `FINALIZACION_VIAJE` con ubicación y, según la acción, kilometraje, nivel de diésel y comentario.
 - `iniciar-carga` exige ubicación; `marcar-retraso` exige ubicación y comentario. Otras acciones operativas validan su payload Pydantic.
-- Iniciar y finalizar requieren evidencia conforme a la transición. Con `STRICT_EVIDENCE_VALIDATION=true`, iniciar también requiere documentos vigentes del operador, tráiler y caja actual si existe; al finalizar se validan solo recursos todavía ligados.
+- `INICIADO` solo puede alcanzarse mediante `POST /viajes/{id}/iniciar-viaje`. La acción exige en su payload al menos una evidencia nueva de tipo `EVIDENCIA_INICIO`; puede incluir `EVIDENCIA_GENERAL`, pero ésta no sustituye la evidencia obligatoria. `EVIDENCIA_CIERRE` y cualquier otro tipo no permitido se rechazan.
+- `FINALIZADO` solo puede alcanzarse mediante `POST /viajes/{id}/finalizar`. La acción exige en su payload al menos una evidencia nueva de tipo `EVIDENCIA_CIERRE`; puede incluir `EVIDENCIA_GENERAL`, pero ésta no sustituye la evidencia obligatoria. `EVIDENCIA_INICIO` y cualquier otro tipo no permitido se rechazan.
+- Las evidencias históricas no satisfacen una nueva acción de inicio o finalización. Las evidencias aceptadas se vinculan al evento operativo creado en la misma acción: `INICIO_VIAJE` o `FINALIZACION_VIAJE`.
+- Inicio y finalización validan payload operativo, transición, asignación, evidencias y requisitos documentales antes de escribir. Ante cualquier excepción se ejecuta rollback para no persistir parcialmente evento, evidencias, historial, estatus, fechas, recursos o asignación.
+- Con `STRICT_EVIDENCE_VALIDATION=true`, iniciar también requiere documentos vigentes del operador, tráiler y caja actual si existe; al finalizar se validan solo recursos todavía ligados.
 - Operadores ven y operan únicamente viajes propios: por operador actual o asignación activa; ciertas operaciones terminales también admiten asignación histórica si no existe otro operador actual.
 - Mantenimientos afectan la disponibilidad de tráilers/cajas. Las órdenes manejan checklist, archivos y evidencias, estados de ciclo y cierre/cancelación.
 - La disponibilidad se deriva en consulta y considera actividad, viajes y mantenimientos.
@@ -327,6 +331,7 @@ La API no usa un prefijo global versionado. Swagger queda disponible en `/docs` 
 ## Workflow y disponibilidad
 
 - `POST /viajes/{id}/asignar`, `/iniciar-carga`, `/iniciar-viaje`, `/marcar-retraso`, `/poner-standby`, `/solicitar-standby`, `/autorizar-standby`, `/reiniciar-viaje`, `/reasignar`, `/finalizar`, `/cancelar` y `/cambiar-estatus`.
+- `POST /viajes/{id}/cambiar-estatus` rechaza con HTTP 400 los destinos `INICIADO` y `FINALIZADO`, indicando respectivamente `/iniciar-viaje` y `/finalizar`; los destinos inexistentes y las demás transiciones conservan su flujo de validación anterior.
 - `GET /viajes/{id}/transiciones-disponibles`.
 - `GET /viajes/disponibilidad/resumen`, `/operadores`, `/trailers`, `/cajas`.
 
@@ -436,7 +441,7 @@ Los routers se registran explícitamente en `bootstrap/routers.py`. Están separ
 
 ## CRUD
 
-Existen módulos CRUD por catálogo y por dominio. `crud_viajes.py` concentra el workflow y es el archivo de lógica más amplio; `viajes_helpers.py` agrupa consultas auxiliares. Dashboard/KPIs, mantenimientos, alertas, Telegram y usuarios tienen módulos dedicados.
+Existen módulos CRUD por catálogo y por dominio. `crud_viajes.py` concentra el workflow y es el archivo de lógica más amplio; `viajes_helpers.py` agrupa consultas auxiliares. Dashboard/KPIs, mantenimientos, alertas, Telegram y usuarios tienen módulos dedicados. En inicio y finalización, `crud_viajes.py` prevalida la acción antes de crear eventos o evidencias, mantiene `cambiar_estatus_viaje` como propietario del commit exitoso y ejecuta rollback ante cualquier excepción.
 
 ## Schemas
 
@@ -610,7 +615,6 @@ Dentro de Docker, `DATABASE_URL` debe apuntar a `db:5432`, no a `localhost`. No 
 
 ## Detectados explícitamente
 
-- Diferenciar evidencia de inicio y evidencia de cierre.
 - Completar la integración real de almacenamiento R2; actualmente hay soporte prefirmado y datos de prueba, pero la documentación reconoce integración parcial.
 - Filtros avanzados mencionados como pendientes en `README.md`; algunas vistas ya tienen filtros, por lo que el alcance exacto restante no está definido.
 - `/admin/evidencias` continúa como placeholder.
@@ -802,6 +806,20 @@ Registra cada intervención futura que produzca cambios materiales. No sustituye
 - **Pendientes:**
 - **Revisión humana:** Pendiente / Aprobada / Rechazada
 ```
+
+## 2026-08-05 — Evidencias específicas de inicio y cierre
+
+- **IA/herramienta:** Codex.
+- **Objetivo:** diferenciar las evidencias nuevas exigidas al iniciar y finalizar un viaje y bloquear esas transiciones desde el endpoint genérico.
+- **Archivos modificados:** `backend/app/api/routes_viajes.py`, `backend/app/crud/crud_viajes.py`, `backend/tests/test_dashboard_admin_contract.py`, `backend/tests/test_viajes_contract.py` y `backend/tests/test_viaje_evidencias_workflow_persistence.py`.
+- **Motivo:** impedir que evidencias generales, históricas o correspondientes a la etapa contraria satisfagan las transiciones a `INICIADO` o `FINALIZADO`.
+- **Cambios:** validación de `EVIDENCIA_INICIO` y `EVIDENCIA_CIERRE` por acción; `EVIDENCIA_GENERAL` como complemento; rechazo de tipos prohibidos o no permitidos; prevalidación y rollback atómico; bloqueo HTTP 400 del endpoint genérico; pruebas persistentes y contractuales. También se corrigió el aislamiento de una prueba del dashboard para evitar ejecutar accidentalmente el startup real.
+- **Impacto/compatibilidad:** sin cambios de modelos, schemas, seeds, migraciones ni contratos JSON. Las demás transiciones genéricas conservan su comportamiento.
+- **Validación autorizada y resultado:** 33 pruebas de workflow y persistencia aprobadas; 9 pruebas contractuales de viajes aprobadas; prueba de zona horaria del dashboard aprobada; suite backend completa con 128 pruebas aprobadas, 0 fallidas y 0 errores.
+- **Validaciones no ejecutadas:** pruebas del frontend.
+- **Pendientes:** push pendiente de autorización.
+- **Revisión humana:** Aprobada.
+- **Commit funcional:** `baf5a31 feat(viajes): validar evidencias de inicio y cierre`.
 
 ## 2026-08-03 — Conversión a Constitución Técnica
 
