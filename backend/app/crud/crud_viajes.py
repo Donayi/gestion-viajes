@@ -998,6 +998,43 @@ def _payload_tiene_evidencias_validas(
     return evidencia_valida
 
 
+def _validar_evidencias_nuevas_accion(
+    db: Session,
+    evidencias: list[EvidenciaOperativaInput] | None,
+    *,
+    tipo_obligatorio: str,
+    tipos_permitidos: set[str],
+    tipo_prohibido: str,
+    accion: str,
+) -> None:
+    encontro_tipo_obligatorio = False
+
+    for evidencia_in in evidencias or []:
+        tipo_evidencia = (
+            db.query(TipoEvidencia)
+            .filter(TipoEvidencia.id_tipo_evidencia == evidencia_in.id_tipo_evidencia)
+            .first()
+        )
+        if not tipo_evidencia:
+            raise ValueError("El tipo de evidencia especificado no existe")
+
+        if not archivo_storage_exists(db, evidencia_in.id_archivo):
+            raise ValueError("El archivo especificado no existe")
+
+        nombre_tipo = tipo_evidencia.nombre
+        if nombre_tipo == tipo_prohibido:
+            raise ValueError(f"El tipo {nombre_tipo} está prohibido para {accion} el viaje")
+        if nombre_tipo not in tipos_permitidos:
+            raise ValueError(f"El tipo {nombre_tipo} no está permitido para {accion} el viaje")
+        if nombre_tipo == tipo_obligatorio:
+            encontro_tipo_obligatorio = True
+
+    if not encontro_tipo_obligatorio:
+        raise ValueError(
+            f"Para {accion} el viaje se requiere al menos una evidencia nueva de tipo {tipo_obligatorio}"
+        )
+
+
 def _validar_requisitos_evidencia_transicion(
     db: Session,
     db_viaje: Viaje,
@@ -1005,31 +1042,34 @@ def _validar_requisitos_evidencia_transicion(
     estatus_destino: CatalogoEstatusViaje,
     evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
 ) -> None:
-    if not transicion.requiere_evidencia:
-        return
-
-    tiene_evidencias_validas = _viaje_tiene_evidencias_validas(db, db_viaje.id_viaje) or _payload_tiene_evidencias_validas(
-        db,
-        evidencias_en_payload,
-    )
-
     if estatus_destino.clave == "INICIADO":
-        if not tiene_evidencias_validas:
-            raise ValueError(
-                "La transición a INICIADO requiere al menos una evidencia asociada al viaje con id_archivo válido"
-            )
-    elif estatus_destino.clave == "FINALIZADO":
-        if not tiene_evidencias_validas:
-            raise ValueError(
-                "La transición a FINALIZADO requiere al menos una evidencia asociada al viaje con id_archivo válido"
-            )
-        # Punto de extensión: aquí podrá diferenciarse evidencia de cierre por tipo.
-    elif not tiene_evidencias_validas:
-        raise ValueError(
-            f"La transición a {estatus_destino.clave} requiere al menos una evidencia asociada al viaje con id_archivo válido"
+        _validar_evidencias_nuevas_accion(
+            db,
+            evidencias_en_payload,
+            tipo_obligatorio="EVIDENCIA_INICIO",
+            tipos_permitidos={"EVIDENCIA_INICIO", "EVIDENCIA_GENERAL"},
+            tipo_prohibido="EVIDENCIA_CIERRE",
+            accion="iniciar",
         )
+    elif estatus_destino.clave == "FINALIZADO":
+        _validar_evidencias_nuevas_accion(
+            db,
+            evidencias_en_payload,
+            tipo_obligatorio="EVIDENCIA_CIERRE",
+            tipos_permitidos={"EVIDENCIA_CIERRE", "EVIDENCIA_GENERAL"},
+            tipo_prohibido="EVIDENCIA_INICIO",
+            accion="finalizar",
+        )
+    elif transicion.requiere_evidencia:
+        tiene_evidencias_validas = _viaje_tiene_evidencias_validas(
+            db, db_viaje.id_viaje
+        ) or _payload_tiene_evidencias_validas(db, evidencias_en_payload)
+        if not tiene_evidencias_validas:
+            raise ValueError(
+                f"La transición a {estatus_destino.clave} requiere al menos una evidencia asociada al viaje con id_archivo válido"
+            )
 
-    if settings.strict_evidence_validation:
+    if transicion.requiere_evidencia and settings.strict_evidence_validation:
         _validar_documentos_transicion_strict(db, db_viaje, estatus_destino)
 
 
@@ -1626,29 +1666,10 @@ def cambiar_estatus_viaje(
     cambio_in: ViajeCambioEstatus,
     evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
 ) -> Viaje:
-    validar_viaje_no_terminal_para_mutacion(db_viaje)
-    estatus_actual = get_estatus_by_id(db, db_viaje.id_estatus_actual)
-    estatus_destino = get_estatus_by_id(db, cambio_in.id_estatus_destino)
-
-    if not estatus_actual or not estatus_destino:
-        raise ValueError("Estatus actual o destino inválido")
-
-    transicion = transicion_permitida(
-        db,
-        db_viaje.id_estatus_actual,
-        cambio_in.id_estatus_destino,
-    )
-    if not transicion:
-        raise ValueError("La transición de estatus no está permitida")
-
-    if transicion.requiere_comentario and not cambio_in.comentario:
-        raise ValueError("Esta transición requiere comentario")
-
-    _validar_requisitos_evidencia_transicion(
+    estatus_actual, estatus_destino, _ = _validar_cambio_estatus_viaje(
         db,
         db_viaje,
-        transicion,
-        estatus_destino,
+        cambio_in,
         evidencias_en_payload=evidencias_en_payload,
     )
 
@@ -1705,6 +1726,47 @@ def cambiar_estatus_viaje(
     db.refresh(db_viaje)
     notificar_alerta_inmediata_si_aplica(db, alerta_cambio_estatus)
     return db_viaje
+
+
+def _validar_cambio_estatus_viaje(
+    db: Session,
+    db_viaje: Viaje,
+    cambio_in: ViajeCambioEstatus,
+    evidencias_en_payload: list[EvidenciaOperativaInput] | None = None,
+) -> tuple[CatalogoEstatusViaje, CatalogoEstatusViaje, TransicionEstatusViaje]:
+    validar_viaje_no_terminal_para_mutacion(db_viaje)
+    estatus_actual = get_estatus_by_id(db, db_viaje.id_estatus_actual)
+    estatus_destino = get_estatus_by_id(db, cambio_in.id_estatus_destino)
+
+    if not estatus_actual or not estatus_destino:
+        raise ValueError("Estatus actual o destino inválido")
+
+    transicion = transicion_permitida(
+        db,
+        db_viaje.id_estatus_actual,
+        cambio_in.id_estatus_destino,
+    )
+    if not transicion:
+        raise ValueError("La transición de estatus no está permitida")
+
+    if transicion.requiere_comentario and not cambio_in.comentario:
+        raise ValueError("Esta transición requiere comentario")
+
+    _validar_requisitos_evidencia_transicion(
+        db,
+        db_viaje,
+        transicion,
+        estatus_destino,
+        evidencias_en_payload=evidencias_en_payload,
+    )
+
+    asignacion_activa = get_asignacion_activa_by_viaje(db, db_viaje.id_viaje)
+    if estatus_destino.clave in {"ASIGNADO", "CARGANDO", "INICIADO"} and not asignacion_activa:
+        raise ValueError("El viaje requiere una asignación activa para este estatus")
+
+    return estatus_actual, estatus_destino, transicion
+
+
 def get_transiciones_disponibles_by_viaje(
     db: Session,
     db_viaje: Viaje,
@@ -1786,25 +1848,43 @@ def iniciar_viaje(
     changed_by: int | None = None,
     comentario: str | None = None,
 ) -> Viaje:
-    validar_viaje_no_terminal_para_mutacion(db_viaje)
-    if _viaje_tiene_evento_operativo(db, db_viaje.id_viaje, "INICIO_VIAJE"):
-        raise ValueError("El viaje ya registró inicio de viaje y no puede repetir esta acción")
+    try:
+        validar_viaje_no_terminal_para_mutacion(db_viaje)
+        if _viaje_tiene_evento_operativo(db, db_viaje.id_viaje, "INICIO_VIAJE"):
+            raise ValueError("El viaje ya registró inicio de viaje y no puede repetir esta acción")
 
-    _crear_evento_y_evidencias_operativas(
-        db,
-        db_viaje,
-        "INICIO_VIAJE",
-        evento_in,
-        changed_by=changed_by,
-    )
-    return cambiar_estatus_por_clave(
-        db,
-        db_viaje,
-        "INICIADO",
-        changed_by=changed_by,
-        comentario=comentario or "Viaje iniciado",
-        evidencias_en_payload=evento_in.evidencias,
-    )
+        _validar_payload_operativo_por_accion(db, db_viaje, "INICIO_VIAJE", evento_in)
+        estatus_destino = get_estatus_by_clave(db, "INICIADO")
+        if not estatus_destino:
+            raise ValueError("No existe el estatus destino INICIADO")
+        cambio = ViajeCambioEstatus(
+            id_estatus_destino=estatus_destino.id_estatus,
+            changed_by=changed_by,
+            comentario=comentario or "Viaje iniciado",
+        )
+        _validar_cambio_estatus_viaje(
+            db,
+            db_viaje,
+            cambio,
+            evidencias_en_payload=evento_in.evidencias,
+        )
+
+        _crear_evento_y_evidencias_operativas(
+            db,
+            db_viaje,
+            "INICIO_VIAJE",
+            evento_in,
+            changed_by=changed_by,
+        )
+        return cambiar_estatus_viaje(
+            db,
+            db_viaje,
+            cambio,
+            evidencias_en_payload=evento_in.evidencias,
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 def marcar_retraso_viaje(
@@ -1970,22 +2050,40 @@ def finalizar_viaje(
     changed_by: int | None = None,
     comentario: str | None = None,
 ) -> Viaje:
-    validar_viaje_no_terminal_para_mutacion(db_viaje)
-    _crear_evento_y_evidencias_operativas(
-        db,
-        db_viaje,
-        "FINALIZACION_VIAJE",
-        evento_in,
-        changed_by=changed_by,
-    )
-    return cambiar_estatus_por_clave(
-        db,
-        db_viaje,
-        "FINALIZADO",
-        changed_by=changed_by,
-        comentario=comentario or "Viaje finalizado",
-        evidencias_en_payload=evento_in.evidencias,
-    )
+    try:
+        validar_viaje_no_terminal_para_mutacion(db_viaje)
+        _validar_payload_operativo_por_accion(db, db_viaje, "FINALIZACION_VIAJE", evento_in)
+        estatus_destino = get_estatus_by_clave(db, "FINALIZADO")
+        if not estatus_destino:
+            raise ValueError("No existe el estatus destino FINALIZADO")
+        cambio = ViajeCambioEstatus(
+            id_estatus_destino=estatus_destino.id_estatus,
+            changed_by=changed_by,
+            comentario=comentario or "Viaje finalizado",
+        )
+        _validar_cambio_estatus_viaje(
+            db,
+            db_viaje,
+            cambio,
+            evidencias_en_payload=evento_in.evidencias,
+        )
+
+        _crear_evento_y_evidencias_operativas(
+            db,
+            db_viaje,
+            "FINALIZACION_VIAJE",
+            evento_in,
+            changed_by=changed_by,
+        )
+        return cambiar_estatus_viaje(
+            db,
+            db_viaje,
+            cambio,
+            evidencias_en_payload=evento_in.evidencias,
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 def cancelar_viaje(

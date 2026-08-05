@@ -232,6 +232,14 @@ def test_cambiar_estatus_contract(app, monkeypatch):
     monkeypatch.setattr(routes_viajes, "get_viaje_by_id", lambda db, viaje_id: _viaje_model())
     monkeypatch.setattr(
         routes_viajes,
+        "get_estatus_by_id",
+        lambda db, estatus_id: SimpleNamespace(
+            id_estatus=estatus_id,
+            clave="CARGANDO",
+        ),
+    )
+    monkeypatch.setattr(
+        routes_viajes,
         "cambiar_estatus_viaje",
         lambda db, db_viaje, cambio_in: _viaje_record(),
     )

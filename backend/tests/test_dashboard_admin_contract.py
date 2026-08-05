@@ -268,12 +268,10 @@ def test_dashboard_admin_returns_stable_contract_without_heavy_fields(client, mo
         assert forbidden_keys.isdisjoint(item.keys())
 
 
-def test_get_admin_dashboard_sets_timezone_aware_generated_at(monkeypatch):
+def test_get_admin_dashboard_sets_timezone_aware_generated_at(client, monkeypatch):
     from app.api import routes_dashboard
     from app.schemas.kpi_operativo import KpiOperativoResumenResponse
-    from app.main import app
 
-    _override_db(app)
     _set_current_user(monkeypatch, ADMIN)
     monkeypatch.setattr(
         routes_dashboard,
@@ -328,10 +326,7 @@ def test_get_admin_dashboard_sets_timezone_aware_generated_at(monkeypatch):
         lambda db, estatus_claves=None, incluir_finalizados=True, incluir_cancelados=True: [],
     )
 
-    with TestClient(app) as client:
-        response = client.get("/dashboard/admin", headers=_auth_headers(ADMIN))
-
-    app.dependency_overrides.clear()
+    response = client.get("/dashboard/admin", headers=_auth_headers(ADMIN))
 
     assert response.status_code == 200
     generated_at = datetime.fromisoformat(response.json()["generated_at"].replace("Z", "+00:00"))

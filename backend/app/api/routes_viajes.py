@@ -32,6 +32,7 @@ from app.crud.crud_viajes import (
     get_documentos_by_viaje,
     get_evidencia_by_id_and_viaje,
     get_evidencias_by_viaje,
+    get_estatus_by_id,
     get_eventos_operativos_by_viaje,
     get_historial_by_viaje,
     get_historial_enriched_by_viaje,
@@ -1077,6 +1078,18 @@ def cambiar_estatus(
             detail="Viaje no encontrado",
         )
     _bloquear_operacion_operador_en_standby(db_viaje, current_user)
+
+    estatus_destino = get_estatus_by_id(db, cambio_in.id_estatus_destino)
+    if estatus_destino and estatus_destino.clave == "INICIADO":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La transición a INICIADO debe realizarse mediante /iniciar-viaje",
+        )
+    if estatus_destino and estatus_destino.clave == "FINALIZADO":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La transición a FINALIZADO debe realizarse mediante /finalizar",
+        )
 
     try:
         return cambiar_estatus_viaje(db, db_viaje, cambio_in)
