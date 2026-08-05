@@ -148,14 +148,21 @@ Login web:
 
 ## Cómo ejecutar pruebas
 
-Backend:
+Las pruebas con persistencia usan exclusivamente PostgreSQL aislado mediante
+`infra/compose.test.yml`. El servicio no expone puerto, usa almacenamiento temporal y
+define `TEST_DATABASE_URL` con la base exclusiva `logistica_test`.
+
+Ejecutar únicamente el bloque de mantenimiento y disponibilidad:
 
 ```powershell
-cd backend
-python -m pytest
+docker compose -f infra/compose.test.yml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f infra/compose.test.yml down
 ```
 
-Si usas entorno virtual, actívalo antes de correr pruebas.
+Las fixtures rechazan la ejecución persistente si `TEST_DATABASE_URL` no está definida,
+coincide con `DATABASE_URL`, no usa PostgreSQL o no apunta exactamente al host `db_test`,
+usuario `logistica_test_user` y base `logistica_test`.
+Nunca uses `logistica_db` ni el volumen `pgdata_dev` para estas pruebas.
 
 ## Comandos útiles Docker
 

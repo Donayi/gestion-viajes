@@ -1,0 +1,36 @@
+name: gestion_viajes_tests
+
+services:
+  db_test:
+    image: postgres:16
+    container_name: logistica_db_test
+    environment:
+      POSTGRES_USER: logistica_test_user
+      POSTGRES_PASSWORD: logistica_test_password
+      POSTGRES_DB: logistica_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logistica_test_user -d logistica_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  tests:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.dev
+    container_name: logistica_tests
+    working_dir: /app
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://development-disabled:development-disabled@invalid-development-host:5432/development_disabled
+      TEST_DATABASE_URL: postgresql+psycopg://logistica_test_user:logistica_test_password@db_test:5432/logistica_test
+      SECRET_KEY: test-only-secret
+      PYTHONPATH: /app
+    depends_on:
+      db_test:
+        condition: service_healthy
+    volumes:
+      - ../backend:/app
+    command: python -m pytest tests/test_mantenimiento_disponibilidad_persistence.py -vv
