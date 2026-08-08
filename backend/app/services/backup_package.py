@@ -57,6 +57,7 @@ CHECKSUM_MISMATCH = "CHECKSUM_MISMATCH"
 UNSUPPORTED_ZIP_FEATURE = "UNSUPPORTED_ZIP_FEATURE"
 PACKAGE_UNREADABLE = "PACKAGE_UNREADABLE"
 _HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_MAX_JSON_ENTRY_BYTES = 16 * 1024 * 1024
 _SAFE_FILENAME_PATTERN = re.compile(
     r"^dafreq-backup-\d{8}T\d{6}[+-]\d{4}-[0-9a-f]{8}-[0-9a-f]{4}-"
     r"[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.dafreq-backup$"
@@ -386,16 +387,40 @@ def _read_entry(
     info: zipfile.ZipInfo,
     *,
     chunk_size: int,
+    max_bytes: int,
 ) -> bytes:
+    if info.file_size > max_bytes:
+        raise BackupPackageValidationError(
+            INVALID_MANIFEST, "Una entrada JSON excede el tamano permitido"
+        )
     content = bytearray()
     with archive.open(info, "r") as stream:
         while chunk := stream.read(chunk_size):
             content.extend(chunk)
-            if len(content) > info.file_size:
+            if len(content) > info.file_size or len(content) > max_bytes:
                 raise BackupPackageValidationError(INVALID_ZIP, "Tamano de entrada invalido")
     if len(content) != info.file_size:
         raise BackupPackageValidationError(INVALID_ZIP, "Tamano de entrada inconsistente")
     return bytes(content)
+
+
+def _hash_entry(
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    *,
+    chunk_size: int,
+) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with archive.open(info, "r") as stream:
+        while chunk := stream.read(chunk_size):
+            size += len(chunk)
+            if size > info.file_size:
+                raise BackupPackageValidationError(INVALID_ZIP, "Tamano de entrada invalido")
+            digest.update(chunk)
+    if size != info.file_size:
+        raise BackupPackageValidationError(INVALID_ZIP, "Tamano de entrada inconsistente")
+    return digest.hexdigest(), size
 
 
 def _require_exact_keys(value: Mapping[str, Any], expected: set[str], label: str) -> None:
@@ -645,17 +670,27 @@ def validate_backup_package(
                 )
 
             info_by_name = {entry.filename: entry for entry in entries}
-            contents = {
-                name: _read_entry(
-                    archive,
-                    info_by_name[name],
-                    chunk_size=active_limits.stream_chunk_bytes,
-                )
-                for name in PACKAGE_ENTRIES
-            }
+            manifest_bytes = _read_entry(
+                archive,
+                info_by_name[MANIFEST_PATH],
+                chunk_size=active_limits.stream_chunk_bytes,
+                max_bytes=min(
+                    active_limits.max_uncompressed_bytes,
+                    _MAX_JSON_ENTRY_BYTES,
+                ),
+            )
+            checksums_bytes = _read_entry(
+                archive,
+                info_by_name[CHECKSUMS_PATH],
+                chunk_size=active_limits.stream_chunk_bytes,
+                max_bytes=min(
+                    active_limits.max_uncompressed_bytes,
+                    _MAX_JSON_ENTRY_BYTES,
+                ),
+            )
             try:
-                manifest = json.loads(contents[MANIFEST_PATH].decode("utf-8"))
-                checksums = json.loads(contents[CHECKSUMS_PATH].decode("utf-8"))
+                manifest = json.loads(manifest_bytes.decode("utf-8"))
+                checksums = json.loads(checksums_bytes.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise BackupPackageValidationError(
                     INVALID_MANIFEST, "El paquete contiene JSON invalido"
@@ -664,19 +699,32 @@ def validate_backup_package(
                 raise BackupPackageValidationError(
                     CHECKSUM_MISMATCH, "Registro de checksums invalido"
                 )
+            actual_hashes = {
+                MANIFEST_PATH: hashlib.sha256(manifest_bytes).hexdigest(),
+            }
+            actual_sizes = {
+                MANIFEST_PATH: len(manifest_bytes),
+            }
+            for name in (DATABASE_DUMP_PATH, RESTORE_LIST_PATH):
+                entry_hash, entry_size = _hash_entry(
+                    archive,
+                    info_by_name[name],
+                    chunk_size=active_limits.stream_chunk_bytes,
+                )
+                actual_hashes[name] = entry_hash
+                actual_sizes[name] = entry_size
             for name in CHECKSUMMED_ENTRIES:
                 expected_hash = checksums[name]
-                actual_hash = hashlib.sha256(contents[name]).hexdigest()
                 if not isinstance(expected_hash, str) or not _HASH_PATTERN.fullmatch(expected_hash):
                     raise BackupPackageValidationError(CHECKSUM_MISMATCH, "Checksum invalido")
-                if not hmac.compare_digest(expected_hash, actual_hash):
+                if not hmac.compare_digest(expected_hash, actual_hashes[name]):
                     raise BackupPackageValidationError(CHECKSUM_MISMATCH, "Checksum incorrecto")
 
             backup_id = _validate_manifest(manifest, package_size=package_size)
             manifest_files = {item["path"]: item for item in manifest["files"]}
             for name in (DATABASE_DUMP_PATH, RESTORE_LIST_PATH):
                 item = manifest_files[name]
-                if item["size_bytes"] != len(contents[name]):
+                if item["size_bytes"] != actual_sizes[name]:
                     raise BackupPackageValidationError(
                         INVALID_MANIFEST, "Tamano de archivo inconsistente"
                     )
