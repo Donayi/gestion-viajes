@@ -1,21 +1,31 @@
+from datetime import datetime
+from uuid import UUID, uuid4
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CHAR,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     Numeric,
     String,
     Text,
     Time,
     UniqueConstraint,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+CONTROL_RESPALDO_SCHEMA = "control_respaldo"
 
 
 class Rol(Base):
@@ -842,3 +852,270 @@ class IncidenciaArchivo(Base):
 
     incidencia = relationship("Incidencia", back_populates="archivos")
     archivo = relationship("ArchivoStorage", back_populates="incidencias_archivos")
+
+
+class RespaldoControl(Base):
+    __tablename__ = "respaldos"
+    __table_args__ = (
+        CheckConstraint("size_bytes IS NULL OR size_bytes >= 0", name="ck_respaldos_size_bytes"),
+        CheckConstraint("table_count IS NULL OR table_count >= 0", name="ck_respaldos_table_count"),
+        CheckConstraint("row_count IS NULL OR row_count >= 0", name="ck_respaldos_row_count"),
+        CheckConstraint(
+            "format_version IS NULL OR format_version >= 1",
+            name="ck_respaldos_format_version",
+        ),
+        CheckConstraint(
+            "actor_source IN ('USER', 'SYSTEM', 'RECOVERY')",
+            name="ck_respaldos_actor_source",
+        ),
+        CheckConstraint(
+            "origen IN ('MANUAL', 'AUTOMATICO', 'PRE_RESTAURACION', 'IMPORTADO')",
+            name="ck_respaldos_origen",
+        ),
+        CheckConstraint(
+            "estado IN ('PENDIENTE', 'GENERANDO', 'VALIDANDO', 'DISPONIBLE', "
+            "'FALLIDO', 'CORRUPTO', 'ELIMINADO')",
+            name="ck_respaldos_estado",
+        ),
+        Index("ix_control_respaldos_created_at", "created_at"),
+        Index("ix_control_respaldos_estado", "estado"),
+        Index("ix_control_respaldos_origen", "origen"),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    id_respaldo: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    nombre_archivo: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    ruta_relativa: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
+    origen: Mapped[str] = mapped_column(String(30), nullable=False)
+    estado: Mapped[str] = mapped_column(String(30), nullable=False)
+    format_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    application_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postgres_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(CHAR(64), nullable=True, unique=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    table_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    manifest_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    actor_original_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_role_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    actor_nombre_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    actor_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actor_source: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_codigo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    eliminado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OperacionRespaldoControl(Base):
+    __tablename__ = "operaciones_respaldo"
+    __table_args__ = (
+        CheckConstraint(
+            "tipo IN ('GENERACION', 'CARGA', 'VALIDACION', 'DESCARGA', 'RESTAURACION', "
+            "'RECUPERACION', 'LIMPIEZA')",
+            name="ck_operaciones_respaldo_tipo",
+        ),
+        CheckConstraint(
+            "estado IN ('PENDIENTE', 'GENERANDO', 'VALIDANDO', 'RESPALDO_PREVIO', "
+            "'BLOQUEANDO', 'RESTAURANDO', 'VERIFICANDO', 'RECUPERANDO', 'DESCARGANDO', "
+            "'LIMPIANDO', 'EXITOSA', 'FALLIDA', 'FALLIDA_SIN_CAMBIOS', "
+            "'FALLIDA_RECUPERADA', 'FALLIDA_CRITICA', 'CANCELADA', 'INTERRUMPIDA')",
+            name="ck_operaciones_respaldo_estado",
+        ),
+        CheckConstraint(
+            "actor_source IN ('USER', 'SYSTEM', 'RECOVERY')",
+            name="ck_operaciones_respaldo_actor_source",
+        ),
+        CheckConstraint(
+            "resultado_restauracion IS NULL OR resultado_restauracion IN "
+            "('EXITOSA', 'FALLIDA_SIN_CAMBIOS', 'FALLIDA_RECUPERADA', 'FALLIDA_CRITICA')",
+            name="ck_operaciones_resultado_restauracion",
+        ),
+        Index("ix_control_operaciones_created_at", "created_at"),
+        Index("ix_control_operaciones_estado", "estado"),
+        Index("ix_control_operaciones_heartbeat", "heartbeat_at"),
+        Index(
+            "uq_control_operacion_destructiva_activa",
+            text("(1)"),
+            unique=True,
+            postgresql_where=text(
+                "tipo IN ('RESTAURACION', 'RECUPERACION') AND estado IN "
+                "('PENDIENTE', 'VALIDANDO', 'RESPALDO_PREVIO', 'BLOQUEANDO', "
+                "'RESTAURANDO', 'VERIFICANDO', 'RECUPERANDO')"
+            ),
+        ),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    id_operacion: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    estado: Mapped[str] = mapped_column(String(30), nullable=False)
+    id_respaldo: Mapped[UUID | None] = mapped_column(
+        ForeignKey("control_respaldo.respaldos.id_respaldo"), nullable=True
+    )
+    id_respaldo_seguridad: Mapped[UUID | None] = mapped_column(
+        ForeignKey("control_respaldo.respaldos.id_respaldo"), nullable=True
+    )
+    correlation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, unique=True, default=uuid4
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(150), nullable=True, unique=True)
+    worker_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actor_original_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_role_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    actor_nombre_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    actor_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actor_source: Mapped[str] = mapped_column(String(20), nullable=False)
+    client_ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_codigo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resultado_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    resultado_restauracion: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+class ValidacionRespaldoControl(Base):
+    __tablename__ = "validaciones_respaldo"
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('PENDIENTE', 'VALIDO', 'INVALIDO', 'EXPIRADO')",
+            name="ck_validaciones_respaldo_estado",
+        ),
+        CheckConstraint(
+            "format_version IS NULL OR format_version >= 1",
+            name="ck_validaciones_format_version",
+        ),
+        Index("ix_control_validaciones_created_at", "created_at"),
+        Index("ix_control_validaciones_estado", "estado"),
+        Index("ix_control_validaciones_expires_at", "expires_at"),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    id_validacion: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    id_respaldo: Mapped[UUID] = mapped_column(
+        ForeignKey("control_respaldo.respaldos.id_respaldo"), nullable=False
+    )
+    sha256: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)
+    format_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resultado_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    actor_original_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_role_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    actor_captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConfirmacionRestauracionControl(Base):
+    __tablename__ = "confirmaciones_restauracion"
+    __table_args__ = (
+        Index("ix_control_confirmaciones_expires_at", "expires_at"),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    id_confirmacion: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    id_respaldo: Mapped[UUID] = mapped_column(
+        ForeignKey("control_respaldo.respaldos.id_respaldo"), nullable=False
+    )
+    actor_original_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_role_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    token_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False, unique=True)
+    confirmation_phrase_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EstadoSistemaControl(Base):
+    __tablename__ = "estado_sistema"
+    __table_args__ = (
+        CheckConstraint(
+            "clave = 'MANTENIMIENTO_RESTAURACION'",
+            name="ck_estado_sistema_clave",
+        ),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    clave: Mapped[str] = mapped_column(String, primary_key=True)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    id_operacion: Mapped[UUID | None] = mapped_column(
+        ForeignKey("control_respaldo.operaciones_respaldo.id_operacion"), nullable=True
+    )
+    mensaje_publico: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WorkerRespaldoControl(Base):
+    __tablename__ = "workers_respaldo"
+    __table_args__ = (
+        CheckConstraint(
+            "estado IN ('ACTIVO', 'OCUPADO', 'INACTIVO', 'ERROR')",
+            name="ck_workers_respaldo_estado",
+        ),
+        Index("ix_control_workers_last_heartbeat", "last_heartbeat_at"),
+        Index("ix_control_workers_estado", "estado"),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    worker_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    application_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postgres_tools_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    estado: Mapped[str] = mapped_column(String(30), nullable=False)
+    id_operacion_actual: Mapped[UUID | None] = mapped_column(
+        ForeignKey("control_respaldo.operaciones_respaldo.id_operacion"), nullable=True
+    )
+
+
+class TicketDescargaControl(Base):
+    __tablename__ = "tickets_descarga"
+    __table_args__ = (
+        Index("ix_control_tickets_expires_at", "expires_at"),
+        {"schema": CONTROL_RESPALDO_SCHEMA},
+    )
+
+    id_ticket: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    id_respaldo: Mapped[UUID] = mapped_column(
+        ForeignKey("control_respaldo.respaldos.id_respaldo"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False, unique=True)
+    actor_original_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

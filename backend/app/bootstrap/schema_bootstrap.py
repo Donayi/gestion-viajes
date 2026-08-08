@@ -4,6 +4,9 @@ import app.models  # noqa: F401
 
 
 def run_schema_bootstrap() -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS control_respaldo")
+
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         connection.exec_driver_sql(

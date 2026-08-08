@@ -82,6 +82,9 @@ def persistent_test_engine():
         from app.db.base import Base
         import app.models.models  # noqa: F401 - registra el metadata ORM completo
 
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS control_respaldo")
+
         Base.metadata.create_all(bind=engine)
         yield engine
     finally:

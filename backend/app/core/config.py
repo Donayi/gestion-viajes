@@ -1,4 +1,8 @@
-from pydantic import field_validator, model_validator
+from datetime import time
+from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +36,25 @@ class Settings(BaseSettings):
     web_push_vapid_public_key: str | None = None
     web_push_vapid_private_key: str | None = None
     web_push_subject: str = "mailto:admin@dafreqlogistica.com"
+    backup_enabled: bool = False
+    backup_storage_dir: Path = Path("/var/lib/dafreq-backups")
+    backup_temp_dir: Path = Path("/var/lib/dafreq-backups/work")
+    backup_max_upload_bytes: int = Field(default=2 * 1024**3, gt=0)
+    backup_max_uncompressed_bytes: int = Field(default=8 * 1024**3, gt=0)
+    backup_max_compression_ratio: float = Field(default=100.0, gt=1)
+    backup_daily_enabled: bool = True
+    backup_daily_time: str = "02:00"
+    backup_timezone: str = "America/Mexico_City"
+    backup_retention_automatic_count: int = Field(default=30, ge=0)
+    backup_retention_pre_restore_count: int = Field(default=10, ge=0)
+    backup_validation_ttl_minutes: int = Field(default=60, gt=0)
+    backup_confirmation_ttl_minutes: int = Field(default=5, gt=0)
+    backup_operation_timeout_seconds: int = Field(default=3600, gt=0)
+    backup_drain_timeout_seconds: int = Field(default=30, gt=0)
+    backup_worker_poll_seconds: int = Field(default=2, gt=0)
+    backup_temp_retention_hours: int = Field(default=24, gt=0)
+    backup_max_package_entries: int = Field(default=16, gt=0)
+    backup_stream_chunk_bytes: int = Field(default=1024 * 1024, gt=0)
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
@@ -61,6 +84,38 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ]
+
+    @field_validator("backup_storage_dir", "backup_temp_dir", mode="before")
+    @classmethod
+    def validate_backup_directory(cls, value: str | Path) -> Path:
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("Los directorios de respaldo no pueden estar vacíos")
+        return Path(normalized)
+
+    @field_validator("backup_daily_time")
+    @classmethod
+    def validate_backup_daily_time(cls, value: str) -> str:
+        normalized = value.strip()
+        try:
+            parsed = time.fromisoformat(normalized)
+        except ValueError as exc:
+            raise ValueError("BACKUP_DAILY_TIME debe usar el formato HH:MM") from exc
+        if len(normalized) != 5 or parsed.second or parsed.microsecond:
+            raise ValueError("BACKUP_DAILY_TIME debe usar el formato HH:MM")
+        return normalized
+
+    @field_validator("backup_timezone")
+    @classmethod
+    def validate_backup_timezone(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("BACKUP_TIMEZONE no puede estar vacía")
+        try:
+            ZoneInfo(normalized)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("BACKUP_TIMEZONE debe ser una zona horaria IANA válida") from exc
+        return normalized
 
     @staticmethod
     def _normalize_environment(value: str | None) -> str:
