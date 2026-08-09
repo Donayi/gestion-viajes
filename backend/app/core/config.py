@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Gestión de Viajes API"
+    app_version: str = "0.1.0"
     app_env: str = "development"
     environment: str | None = None
     database_url: str
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     web_push_vapid_public_key: str | None = None
     web_push_vapid_private_key: str | None = None
     web_push_subject: str = "mailto:admin@dafreqlogistica.com"
-    backup_enabled: bool = False
+    backup_enabled: bool = True
     backup_storage_dir: Path = Path("/var/lib/dafreq-backups")
     backup_temp_dir: Path = Path("/var/lib/dafreq-backups/work")
     backup_max_upload_bytes: int = Field(default=2 * 1024**3, gt=0)

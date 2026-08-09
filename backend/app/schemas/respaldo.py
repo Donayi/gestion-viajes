@@ -132,6 +132,28 @@ class ListaPaginadaRespaldos(RespaldoContract):
     page_size: int = Field(ge=1, le=100)
 
 
+class RespaldoAdministrativo(RespaldoContract):
+    id_respaldo: UUID
+    nombre_archivo: str = Field(min_length=1, max_length=255)
+    origen: OrigenRespaldo
+    estado: EstadoRespaldo
+    size_bytes: int | None = Field(default=None, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    table_count: int | None = Field(default=None, ge=0)
+    row_count: int | None = Field(default=None, ge=0)
+    created_at: AwareDatetime
+    started_at: AwareDatetime | None = None
+    completed_at: AwareDatetime | None = None
+    error_mensaje: str | None = Field(default=None, max_length=500)
+
+
+class ListaRespaldosAdministrativos(RespaldoContract):
+    items: list[RespaldoAdministrativo]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
 class RespuestaOperacionRespaldo(RespaldoContract):
     id_operacion: UUID
     tipo: TipoOperacionRespaldo

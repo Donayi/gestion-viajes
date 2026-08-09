@@ -302,6 +302,8 @@ Las capacidades no están modeladas como permisos granulares por acción: se bas
 14. **Telegram**: destinatarios, pruebas y notificación de alertas.
 15. **Web Push/PWA**: suscripción, baja, estado, pruebas, service worker, instalación y modo offline básico.
 16. **Salud**: estado de API y ping de base de datos.
+17. **Respaldos administrativos**: generación manual y automática diaria de paquetes
+    `.dafreq-backup`, historial persistente y descarga protegida para administración.
 
 Los modelos `Incidencia` e `IncidenciaArchivo` existen en base de datos, pero no se encontró router, CRUD, schema ni página que los exponga; por tanto no constituyen un módulo funcional implementado.
 
@@ -315,6 +317,15 @@ La API no usa un prefijo global versionado. Swagger queda disponible en `/docs` 
 
 - `GET /health`, `GET /db/ping`.
 - `POST /auth/bootstrap-admin`, `POST /auth/login`, `GET /auth/me`.
+
+## Respaldos administrativos
+
+- `POST /respaldos/manual`, `GET /respaldos` y
+  `GET /respaldos/{id}/descarga`, todos restringidos a roles administrativos.
+- La generación automática usa hora y zona IANA configurables, exclusión concurrente
+  mediante advisory lock PostgreSQL e idempotencia diaria persistida.
+- Los paquetes se almacenan en un volumen dedicado y solo contienen el esquema
+  funcional `public`; `control_respaldo` y los objetos físicos de R2 quedan excluidos.
 
 ## Catálogos administrativos
 
@@ -789,6 +800,22 @@ No se encontró un roadmap formal ni datos suficientes para inventar sprints, fe
 # Changelog IA
 
 Registra cada intervención futura que produzca cambios materiales. No sustituye al historial de Git ni debe incluir secretos, razonamiento privado o afirmaciones no verificadas.
+
+## 2026-08-08 — Recorrido administrativo funcional de respaldos
+
+- **IA/herramienta:** Codex.
+- **Objetivo:** habilitar generación manual, historial, descarga protegida y respaldo automático diario.
+- **Cambios:** router ADMIN, orquestación concurrente e idempotente, scheduler de startup,
+  almacenamiento persistente, PostgreSQL Client 16 en producción y pantalla
+  `/admin/respaldos`.
+- **Impacto/compatibilidad:** conserva el paquete portable y el generador lógico aprobados;
+  no incorpora restauración, importación ni cambios de R2.
+- **Validación autorizada y resultado:** 149 pruebas dirigidas aprobadas, compilación
+  frontend correcta y recorrido visual local completo para generación automática y manual,
+  historial y descarga de ambos paquetes.
+- **Revisión humana:** Aprobada. En desarrollo, el registro PWA se desactiva y limpia sus
+  cachés DAFREQ para impedir que recursos obsoletos de Next.js oculten cambios actuales;
+  producción conserva el service worker.
 
 ## Plantilla
 

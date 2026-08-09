@@ -88,3 +88,28 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   return (await response.json()) as T;
 }
+
+export async function apiDownload(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const token = getStoredToken();
+  const response = await fetch(`${env.apiUrl}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (response.status === 401) {
+    clearStoredToken();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    throw new ApiError("Sesion expirada", 401);
+  }
+  if (!response.ok) {
+    let message = "No fue posible descargar el respaldo";
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) message = payload.detail;
+    } catch {
+      // La respuesta de error no contiene JSON utilizable.
+    }
+    throw new ApiError(message, response.status);
+  }
+  const disposition = response.headers.get("Content-Disposition");
+  const filename = disposition?.match(/filename="([^"]+)"/)?.[1] ?? null;
+  return { blob: await response.blob(), filename };
+}

@@ -64,6 +64,10 @@ _SAFE_FILENAME_PATTERN = re.compile(
 )
 
 
+def is_safe_backup_filename(value: str) -> bool:
+    return isinstance(value, str) and _SAFE_FILENAME_PATTERN.fullmatch(value) is not None
+
+
 class BackupPackageError(Exception):
     """Base para errores internos del contenedor de respaldo."""
 
@@ -820,6 +824,7 @@ __all__ = [
     "build_sha256sums",
     "create_backup_package",
     "generate_backup_filename",
+    "is_safe_backup_filename",
     "read_backup_manifest",
     "sha256_file",
     "validate_backup_package",

@@ -79,6 +79,24 @@ def list_respaldos(
     return items, total
 
 
+def has_automatic_backup_in_period(
+    db: Session,
+    *,
+    start: datetime,
+    end: datetime,
+) -> bool:
+    return (
+        db.query(RespaldoControl.id_respaldo)
+        .filter(
+            RespaldoControl.origen == "AUTOMATICO",
+            RespaldoControl.created_at >= start,
+            RespaldoControl.created_at < end,
+        )
+        .first()
+        is not None
+    )
+
+
 def create_operacion(db: Session, **values: object) -> OperacionRespaldoControl:
     operacion = OperacionRespaldoControl(**values)
     db.add(operacion)
@@ -283,6 +301,7 @@ __all__ = [
     "get_operacion_by_id",
     "get_respaldo_by_id",
     "get_validacion_vigente",
+    "has_automatic_backup_in_period",
     "list_respaldos",
     "register_worker_heartbeat",
     "set_estado_mantenimiento",

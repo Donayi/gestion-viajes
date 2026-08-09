@@ -415,6 +415,8 @@ def generate_logical_backup(
     actor_source: str = "SYSTEM",
     actor_original_id: str | None = None,
     actor_username_snapshot: str | None = None,
+    actor_role_snapshot: str | None = None,
+    actor_nombre_snapshot: str | None = None,
     database_engine: Engine = engine,
     config: Any = settings,
 ) -> BackupGenerationResult:
@@ -431,6 +433,9 @@ def generate_logical_backup(
         actor_source=actor_source,
         actor_original_id=actor_original_id,
         actor_username_snapshot=actor_username_snapshot,
+        actor_role_snapshot=actor_role_snapshot,
+        actor_nombre_snapshot=actor_nombre_snapshot,
+        actor_captured_at=created_at,
         application_version=application_version,
         created_at=created_at,
         started_at=created_at,

@@ -7,6 +7,7 @@ import {
   ClipboardPlus,
   FileText,
   Home,
+  HardDriveDownload,
   IdCard,
   KeyRound,
   ListChecks,
@@ -69,7 +70,10 @@ export const adminNavigationSections: NavigationSection[] = [
   },
   {
     title: "Sistema",
-    items: [{ href: "/admin/perfil", label: "Perfil", icon: UserCog }]
+    items: [
+      { href: "/admin/respaldos", label: "Respaldos", icon: HardDriveDownload },
+      { href: "/admin/perfil", label: "Perfil", icon: UserCog }
+    ]
   }
 ];
 

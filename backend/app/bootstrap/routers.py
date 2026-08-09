@@ -12,6 +12,7 @@ from app.api.routes_kpis import router as kpis_router
 from app.api.routes_mantenimientos import router as mantenimientos_router
 from app.api.routes_operadores import router as operadores_router
 from app.api.routes_push import router as push_router
+from app.api.routes_respaldos import router as respaldos_router
 from app.api.routes_roles import router as roles_router
 from app.api.routes_telegram import router as telegram_router
 from app.api.routes_trailers import router as trailers_router
@@ -29,6 +30,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(kpis_router)
     app.include_router(mantenimientos_router)
     app.include_router(push_router)
+    app.include_router(respaldos_router)
     app.include_router(telegram_router)
     app.include_router(roles_router)
     app.include_router(usuarios_router)

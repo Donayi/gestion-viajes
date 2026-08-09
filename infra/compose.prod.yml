@@ -28,8 +28,11 @@ services:
       - "127.0.0.1:8080:8000"
     depends_on:
       - db
+    volumes:
+      - backupdata:/var/lib/dafreq-backups
     env_file:
       - .env
 
 volumes:
   pgdata:
+  backupdata:

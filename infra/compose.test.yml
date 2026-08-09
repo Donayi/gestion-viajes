@@ -33,4 +33,5 @@ services:
         condition: service_healthy
     volumes:
       - ../backend:/app
+      - ../frontend:/frontend:ro
     command: python -m pytest tests/test_mantenimiento_disponibilidad_persistence.py -vv
