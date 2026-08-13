@@ -1,9 +1,12 @@
 from datetime import time
+import ipaddress
+import json
 from pathlib import Path
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -37,6 +40,13 @@ class Settings(BaseSettings):
     web_push_vapid_public_key: str | None = None
     web_push_vapid_private_key: str | None = None
     web_push_subject: str = "mailto:admin@dafreqlogistica.com"
+    audit_enabled: bool = False
+    audit_ip_hmac_key: SecretStr | None = None
+    audit_ip_hash_version: int = Field(default=1, gt=0)
+    audit_trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    audit_user_agent_max_length: int = Field(default=300, gt=0)
+    audit_retention_months: int = Field(default=24, gt=0)
+    audit_max_json_bytes: int = Field(default=8192, gt=0, le=8192)
     backup_enabled: bool = True
     backup_storage_dir: Path = Path("/var/lib/dafreq-backups")
     backup_temp_dir: Path = Path("/var/lib/dafreq-backups/work")
@@ -86,6 +96,54 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3000",
         ]
 
+    @field_validator("audit_ip_hmac_key", mode="before")
+    @classmethod
+    def normalize_audit_ip_hmac_key(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("audit_trusted_proxies", mode="before")
+    @classmethod
+    def parse_audit_trusted_proxies(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return []
+            if normalized.startswith("["):
+                parsed = json.loads(normalized)
+                if not isinstance(parsed, list):
+                    raise ValueError("AUDIT_TRUSTED_PROXIES debe ser una lista")
+                values = parsed
+            else:
+                values = normalized.split(",")
+        elif isinstance(value, list):
+            values = value
+        else:
+            raise ValueError("AUDIT_TRUSTED_PROXIES debe ser una lista")
+
+        proxies: list[str] = []
+        for item in values:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(
+                    "AUDIT_TRUSTED_PROXIES solo acepta direcciones IP o redes CIDR"
+                )
+            candidate = item.strip()
+            try:
+                if "/" in candidate:
+                    proxy = str(ipaddress.ip_network(candidate, strict=False))
+                else:
+                    proxy = str(ipaddress.ip_address(candidate))
+            except ValueError as exc:
+                raise ValueError(
+                    "AUDIT_TRUSTED_PROXIES solo acepta direcciones IP o redes CIDR"
+                ) from exc
+            if proxy not in proxies:
+                proxies.append(proxy)
+        return proxies
+
     @field_validator("backup_storage_dir", "backup_temp_dir", mode="before")
     @classmethod
     def validate_backup_directory(cls, value: str | Path) -> Path:
@@ -129,19 +187,29 @@ class Settings(BaseSettings):
         }
 
     def validate_runtime_config(self) -> "Settings":
-        if not self.is_production_environment():
-            return self
+        if self.is_production_environment():
+            normalized_secret = (self.secret_key or "").strip()
+            if (
+                not normalized_secret
+                or normalized_secret == "change-me-in-production"
+                or len(normalized_secret) < 32
+            ):
+                raise ValueError(
+                    "SECRET_KEY insegura para producción. Configura una clave no vacía, "
+                    "distinta al valor por defecto y de al menos 32 caracteres."
+                )
 
-        normalized_secret = (self.secret_key or "").strip()
-        if (
-            not normalized_secret
-            or normalized_secret == "change-me-in-production"
-            or len(normalized_secret) < 32
-        ):
-            raise ValueError(
-                "SECRET_KEY insegura para producción. Configura una clave no vacía, "
-                "distinta al valor por defecto y de al menos 32 caracteres."
-            )
+            if self.audit_enabled:
+                audit_key = (
+                    self.audit_ip_hmac_key.get_secret_value()
+                    if self.audit_ip_hmac_key is not None
+                    else ""
+                )
+                if len(audit_key.encode("utf-8")) < 32:
+                    raise ValueError(
+                        "AUDIT_IP_HMAC_KEY es obligatoria cuando la auditoría está "
+                        "activa en producción y debe tener al menos 32 bytes UTF-8."
+                    )
 
         return self
 

@@ -20,6 +20,7 @@ services:
     container_name: logistica_api
     restart: unless-stopped
     environment:
+      APP_ENV: production
       DATABASE_URL: ${DATABASE_URL}
       PYTHONPATH: /app
     # FastAPI se expone solo en localhost del host para que
