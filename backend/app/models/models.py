@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     Time,
@@ -852,6 +853,158 @@ class IncidenciaArchivo(Base):
 
     incidencia = relationship("Incidencia", back_populates="archivos")
     archivo = relationship("ArchivoStorage", back_populates="incidencias_archivos")
+
+
+class BitacoraEvento(Base):
+    __tablename__ = "bitacora_eventos"
+    __table_args__ = (
+        CheckConstraint(
+            "categoria IN ('FUNCIONAL', 'SEGURIDAD')",
+            name="ck_bitacora_eventos_categoria",
+        ),
+        CheckConstraint(
+            "actor_tipo IN ('USUARIO', 'ANONIMO', 'SISTEMA')",
+            name="ck_bitacora_eventos_actor_tipo",
+        ),
+        CheckConstraint(
+            "resultado IN ('EXITOSO', 'FALLIDO', 'RECHAZADO')",
+            name="ck_bitacora_eventos_resultado",
+        ),
+        CheckConstraint("schema_version > 0", name="ck_bitacora_eventos_schema_version"),
+        CheckConstraint(
+            "request_id IS NOT NULL OR correlation_id IS NOT NULL",
+            name="ck_bitacora_eventos_trazabilidad",
+        ),
+        CheckConstraint(
+            "evento_relacionado_id IS NULL OR evento_relacionado_id <> id_evento",
+            name="ck_bitacora_eventos_no_autorreferencia",
+        ),
+        CheckConstraint(
+            "(ip_hash IS NULL AND ip_hash_version IS NULL) OR "
+            "(ip_hash IS NOT NULL AND ip_hash_version IS NOT NULL)",
+            name="ck_bitacora_eventos_ip_par",
+        ),
+        CheckConstraint(
+            "ip_hash IS NULL OR (octet_length(ip_hash) = 64 AND "
+            "ip_hash ~ '^[0-9a-f]{64}$')",
+            name="ck_bitacora_eventos_ip_hash",
+        ),
+        CheckConstraint(
+            "ip_hash_version IS NULL OR ip_hash_version > 0",
+            name="ck_bitacora_eventos_ip_hash_version",
+        ),
+        CheckConstraint(
+            "actor_tipo <> 'USUARIO' OR ("
+            "actor_username_snapshot IS NOT NULL AND btrim(actor_username_snapshot) <> '' AND "
+            "actor_nombre_snapshot IS NOT NULL AND btrim(actor_nombre_snapshot) <> '' AND "
+            "actor_rol_snapshot IS NOT NULL AND btrim(actor_rol_snapshot) <> '')",
+            name="ck_bitacora_eventos_usuario_snapshots",
+        ),
+        CheckConstraint(
+            "actor_tipo = 'USUARIO' OR usuario_id IS NULL",
+            name="ck_bitacora_eventos_usuario_id_actor",
+        ),
+        CheckConstraint(
+            "resultado NOT IN ('FALLIDO', 'RECHAZADO') OR "
+            "(error_codigo IS NOT NULL AND btrim(error_codigo) <> '')",
+            name="ck_bitacora_eventos_error_codigo",
+        ),
+        CheckConstraint(
+            "retener_hasta > ocurrido_at",
+            name="ck_bitacora_eventos_retencion",
+        ),
+        CheckConstraint(
+            "(entidad_tipo IS NULL AND entidad_id IS NULL) OR "
+            "(entidad_tipo IS NOT NULL AND btrim(entidad_tipo) <> '' AND "
+            "entidad_id IS NOT NULL AND btrim(entidad_id) <> '')",
+            name="ck_bitacora_eventos_entidad",
+        ),
+        CheckConstraint(
+            "(metodo_http IS NULL AND ruta_template IS NULL) OR request_id IS NOT NULL",
+            name="ck_bitacora_eventos_http_request",
+        ),
+        Index(
+            "ix_bitacora_eventos_ocurrido_id",
+            text("ocurrido_at DESC"),
+            text("id_evento DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_categoria_ocurrido",
+            "categoria",
+            text("ocurrido_at DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_modulo_accion_ocurrido",
+            "modulo",
+            "accion",
+            text("ocurrido_at DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_resultado_ocurrido",
+            "resultado",
+            text("ocurrido_at DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_usuario_ocurrido",
+            "usuario_id",
+            text("ocurrido_at DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_username_ocurrido",
+            "actor_username_normalizado",
+            text("ocurrido_at DESC"),
+        ),
+        Index(
+            "ix_bitacora_eventos_entidad_ocurrido",
+            "entidad_tipo",
+            "entidad_id",
+            text("ocurrido_at DESC"),
+        ),
+        Index("ix_bitacora_eventos_request_id", "request_id"),
+        {"schema": "public"},
+    )
+
+    id_evento: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    evento_relacionado_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("public.bitacora_eventos.id_evento", ondelete="RESTRICT"), nullable=True
+    )
+    categoria: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    usuario_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actor_username_snapshot: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_username_normalizado: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    actor_nombre_snapshot: Mapped[str | None] = mapped_column(String(301), nullable=True)
+    actor_rol_snapshot: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ocurrido_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("transaction_timestamp()"),
+    )
+    retener_hasta: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("transaction_timestamp() + INTERVAL '24 months'"),
+    )
+    modulo: Mapped[str] = mapped_column(String(100), nullable=False)
+    accion: Mapped[str] = mapped_column(String(80), nullable=False)
+    resultado: Mapped[str] = mapped_column(String(20), nullable=False)
+    entidad_tipo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    entidad_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    request_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    correlation_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    metodo_http: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    ruta_template: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    ip_hash_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    valores_anteriores: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    valores_posteriores: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    datos_evento: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_codigo: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_mensaje: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
 
 class RespaldoControl(Base):

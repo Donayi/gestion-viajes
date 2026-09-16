@@ -2,8 +2,9 @@ import json
 import unicodedata
 from enum import StrEnum
 from typing import Annotated, TypeAlias
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 AUDIT_JSON_MAX_BYTES = 8192
@@ -21,6 +22,10 @@ JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 CatalogoBitacora = Annotated[
     str,
     Field(min_length=1, max_length=100, pattern=r"^[A-Z][A-Z0-9_]*$"),
+]
+AccionBitacora = Annotated[
+    str,
+    Field(min_length=1, max_length=80, pattern=r"^[A-Z][A-Z0-9_]*$"),
 ]
 
 
@@ -207,6 +212,45 @@ class DatosAuditoriaBitacora(BitacoraContract):
         return self
 
 
+class BitacoraEventoCreateInternal(DatosAuditoriaBitacora):
+    evento_relacionado_id: UUID | None = None
+    categoria: CategoriaBitacora
+    actor: ActorBitacora
+    actor_username_normalizado: str | None = Field(default=None, max_length=150)
+    ocurrido_at: AwareDatetime | None = None
+    retener_hasta: AwareDatetime | None = None
+    modulo: CatalogoBitacora
+    accion: AccionBitacora
+    resultado: ResultadoBitacora
+    entidad: ReferenciaRegistroBitacora | None = None
+    request_id: UUID | None = None
+    correlation_id: UUID | None = None
+    metodo_http: str | None = Field(default=None, max_length=10)
+    ruta_template: str | None = Field(default=None, max_length=255)
+    ip_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    ip_hash_version: int | None = Field(default=None, ge=1, le=32767)
+    user_agent: str | None = Field(default=None, max_length=300)
+    error_codigo: str | None = Field(default=None, max_length=100)
+    error_mensaje: str | None = Field(default=None, max_length=500)
+    schema_version: int = Field(ge=1, le=32767)
+
+    @model_validator(mode="after")
+    def validate_persistence_invariants(self) -> "BitacoraEventoCreateInternal":
+        if self.request_id is None and self.correlation_id is None:
+            raise ValueError("El evento requiere request_id o correlation_id")
+        if (self.ip_hash is None) != (self.ip_hash_version is None):
+            raise ValueError("ip_hash e ip_hash_version deben coexistir")
+        if self.resultado in {ResultadoBitacora.FALLIDO, ResultadoBitacora.RECHAZADO}:
+            if self.error_codigo is None or not self.error_codigo.strip():
+                raise ValueError("Un resultado fallido o rechazado requiere error_codigo")
+        if (self.metodo_http is not None or self.ruta_template is not None) and self.request_id is None:
+            raise ValueError("Los campos HTTP requieren request_id")
+        if self.ocurrido_at is not None and self.retener_hasta is not None:
+            if self.retener_hasta <= self.ocurrido_at:
+                raise ValueError("retener_hasta debe ser posterior a ocurrido_at")
+        return self
+
+
 def sanitize_user_agent(
     value: str | None,
     *,
@@ -249,8 +293,10 @@ __all__ = [
     "AUDIT_JSON_MAX_STRING_LENGTH",
     "AUDIT_USER_AGENT_MAX_LENGTH",
     "AUDIT_USERNAME_MAX_LENGTH",
+    "AccionBitacora",
     "ActorBitacora",
     "BitacoraContract",
+    "BitacoraEventoCreateInternal",
     "CatalogoBitacora",
     "CategoriaBitacora",
     "DatosAuditoriaBitacora",

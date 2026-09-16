@@ -94,6 +94,10 @@ def _inventory():
         constraints=frozenset(
             {("viajes", "viajes_pkey"), ("viajes", "viajes_cliente_fkey")}
         ),
+        functions=frozenset({"prevent_bitacora_mutation()"}),
+        triggers=frozenset(
+            {("bitacora_eventos", "trg_bitacora_eventos_immutable")}
+        ),
     )
 
 
@@ -112,6 +116,8 @@ def _valid_toc():
             "5; 1259 3 INDEX public ix_viajes owner",
             "6; 2606 4 CONSTRAINT public viajes viajes_pkey owner",
             "10; 2606 6 FK CONSTRAINT public viajes viajes_cliente_fkey owner",
+            "11; 1255 7 FUNCTION public prevent_bitacora_mutation() owner",
+            "12; 2620 8 TRIGGER public bitacora_eventos trg_bitacora_eventos_immutable owner",
         ]
     )
 
@@ -351,7 +357,48 @@ def test_pg_restore_list_command_and_valid_toc(monkeypatch, tmp_path):
 def test_valid_toc_is_accepted():
     approved = service.validate_restore_toc(_valid_toc(), _inventory())
 
-    assert len(approved) == 12
+    assert len(approved) == 14
+
+
+def test_toc_accepts_only_expected_audit_function_and_trigger():
+    toc = "\n".join(
+        [
+            "11; 1255 7 FUNCTION public prevent_bitacora_mutation() owner",
+            "12; 2620 8 TRIGGER public bitacora_eventos trg_bitacora_eventos_immutable owner",
+        ]
+    )
+
+    assert service.validate_restore_toc(toc, _inventory()) == toc.splitlines()
+
+
+@pytest.mark.parametrize("toc", [
+    "11; 1255 7 FUNCTION public prevent_bitacora_mutation() owner",
+    "12; 2620 8 TRIGGER public bitacora_eventos trg_bitacora_eventos_immutable owner",
+])
+def test_audit_toc_requires_authorized_inventory(toc):
+    inventory = service.DatabaseInventory(
+        tables=frozenset({"bitacora_eventos"}), sequences=frozenset(),
+        indexes=frozenset(), constraints=frozenset(),
+    )
+    with pytest.raises(service.BackupGenerationError) as captured:
+        service.validate_restore_toc(toc, inventory)
+    assert captured.value.code == service.UNEXPECTED_TOC_OBJECT
+
+
+def test_arbitrary_names_rejected_even_if_inventory_contains_them():
+    inventory = service.DatabaseInventory(
+        tables=frozenset({"bitacora_eventos"}), sequences=frozenset(),
+        indexes=frozenset(), constraints=frozenset(),
+        functions=frozenset({"otra_funcion()"}),
+        triggers=frozenset({("bitacora_eventos", "otro_trigger")}),
+    )
+    for toc in (
+        "1; 1255 1 FUNCTION public otra_funcion() owner",
+        "2; 2620 2 TRIGGER public bitacora_eventos otro_trigger owner",
+    ):
+        with pytest.raises(service.BackupGenerationError) as captured:
+            service.validate_restore_toc(toc, inventory)
+        assert captured.value.code == service.UNEXPECTED_TOC_OBJECT
 
 
 def test_toc_rejects_non_public_schema():
@@ -389,6 +436,21 @@ def test_toc_rejects_control_respaldo():
 def test_toc_rejects_unknown_object():
     toc = "1; 1255 1 FUNCTION public funcion_desconocida() owner"
 
+    with pytest.raises(service.BackupGenerationError) as captured:
+        service.validate_restore_toc(toc, _inventory())
+
+    assert captured.value.code == service.UNEXPECTED_TOC_OBJECT
+
+
+@pytest.mark.parametrize(
+    "toc",
+    [
+        "1; 1255 1 FUNCTION public otra_funcion() owner",
+        "1; 2620 1 TRIGGER public bitacora_eventos otro_trigger owner",
+        "1; 2620 1 TRIGGER public viajes trg_bitacora_eventos_immutable owner",
+    ],
+)
+def test_toc_rejects_arbitrary_functions_and_triggers(toc):
     with pytest.raises(service.BackupGenerationError) as captured:
         service.validate_restore_toc(toc, _inventory())
 

@@ -1,6 +1,103 @@
 from app.db.base import Base
 from app.db.database import engine
 import app.models  # noqa: F401
+from sqlalchemy import text
+
+
+_BITACORA_FUNCTION_BODY = """BEGIN
+    RAISE EXCEPTION USING
+        ERRCODE = '55000',
+        MESSAGE = 'La bitácora de auditoría es inmutable';
+END;"""
+_BITACORA_FUNCTION_SQL = f"""
+CREATE FUNCTION public.prevent_bitacora_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $bitacora$
+{_BITACORA_FUNCTION_BODY}
+$bitacora$
+"""
+_BITACORA_TRIGGER_SQL = """
+CREATE TRIGGER trg_bitacora_eventos_immutable
+BEFORE UPDATE OR DELETE ON public.bitacora_eventos
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.prevent_bitacora_mutation()
+"""
+
+
+def _install_bitacora_immutability(connection) -> None:
+    connection.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:lock_name))"),
+        {"lock_name": "dafreq:bootstrap:bitacora_immutability"},
+    )
+    function_row = connection.execute(
+        text(
+            "SELECT p.oid, l.lanname, p.prosecdef, p.proconfig, p.prosrc, "
+            "pg_catalog.pg_get_function_result(p.oid) AS result_type, "
+            "pg_catalog.pg_get_function_identity_arguments(p.oid) AS arguments "
+            "FROM pg_catalog.pg_proc p "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+            "JOIN pg_catalog.pg_language l ON l.oid = p.prolang "
+            "WHERE n.nspname = 'public' "
+            "AND p.proname = 'prevent_bitacora_mutation' "
+            "AND pg_catalog.pg_get_function_identity_arguments(p.oid) = ''"
+        )
+    ).mappings().one_or_none()
+
+    if function_row is None:
+        connection.exec_driver_sql(_BITACORA_FUNCTION_SQL)
+        function_oid = connection.execute(
+            text("SELECT 'public.prevent_bitacora_mutation()'::regprocedure::oid")
+        ).scalar_one()
+    else:
+        expected_config = ["search_path=pg_catalog"]
+        function_is_compatible = (
+            function_row["lanname"] == "plpgsql"
+            and function_row["prosecdef"] is False
+            and function_row["proconfig"] == expected_config
+            and function_row["result_type"] == "trigger"
+            and function_row["arguments"] == ""
+            and function_row["prosrc"].strip(" \t\r\n") == _BITACORA_FUNCTION_BODY
+        )
+        if not function_is_compatible:
+            raise RuntimeError(
+                "La función public.prevent_bitacora_mutation() tiene una definición incompatible"
+            )
+        function_oid = function_row["oid"]
+
+    trigger_rows = connection.execute(
+        text(
+            "SELECT t.oid, t.tgrelid, t.tgfoid, t.tgtype, t.tgenabled, t.tgqual, "
+            "n.nspname AS table_schema, c.relname AS table_name "
+            "FROM pg_catalog.pg_trigger t "
+            "JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE t.tgname = 'trg_bitacora_eventos_immutable' "
+            "AND NOT t.tgisinternal"
+        )
+    ).mappings().all()
+    if not trigger_rows:
+        connection.exec_driver_sql(_BITACORA_TRIGGER_SQL)
+        return
+    if len(trigger_rows) != 1:
+        raise RuntimeError(
+            "El trigger trg_bitacora_eventos_immutable tiene asociaciones incompatibles"
+        )
+    trigger = trigger_rows[0]
+    trigger_is_compatible = (
+        trigger["table_schema"] == "public"
+        and trigger["table_name"] == "bitacora_eventos"
+        and trigger["tgfoid"] == function_oid
+        and trigger["tgtype"] == 26
+        and trigger["tgenabled"] == "O"
+        and trigger["tgqual"] is None
+    )
+    if not trigger_is_compatible:
+        raise RuntimeError(
+            "El trigger trg_bitacora_eventos_immutable tiene una definición incompatible"
+        )
 
 
 def run_schema_bootstrap() -> None:
@@ -9,6 +106,7 @@ def run_schema_bootstrap() -> None:
 
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
+        _install_bitacora_immutability(connection)
         connection.exec_driver_sql(
             "ALTER TABLE IF EXISTS eventos_operativos_viaje ALTER COLUMN kilometraje DROP NOT NULL"
         )

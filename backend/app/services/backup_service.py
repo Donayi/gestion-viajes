@@ -60,9 +60,16 @@ _TOC_TYPES = (
     "SEQUENCE",
     "DEFAULT",
     "INDEX",
+    "FUNCTION",
+    "TRIGGER",
     "TABLE",
     "SCHEMA",
 )
+_EXPECTED_AUDIT_FUNCTION_BODY = """BEGIN
+    RAISE EXCEPTION USING
+        ERRCODE = '55000',
+        MESSAGE = 'La bitácora de auditoría es inmutable';
+END;"""
 
 
 class BackupGenerationError(Exception):
@@ -86,6 +93,8 @@ class DatabaseInventory:
     sequences: frozenset[str]
     indexes: frozenset[str]
     constraints: frozenset[tuple[str, str]]
+    functions: frozenset[str] = frozenset()
+    triggers: frozenset[tuple[str, str]] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -200,7 +209,53 @@ def _load_inventory(connection: Connection) -> DatabaseInventory:
             )
         )
     )
-    return DatabaseInventory(tables, sequences, indexes, constraints)
+    functions = frozenset(
+        row[0]
+        for row in connection.execute(
+            text(
+                "SELECT p.proname || '(' || "
+                "pg_catalog.pg_get_function_identity_arguments(p.oid) || ')' "
+                "FROM pg_catalog.pg_proc p "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace "
+                "JOIN pg_catalog.pg_language l ON l.oid = p.prolang "
+                "WHERE n.nspname = 'public' "
+                "AND p.proname = 'prevent_bitacora_mutation' "
+                "AND pg_catalog.pg_get_function_identity_arguments(p.oid) = '' "
+                "AND pg_catalog.pg_get_function_result(p.oid) = 'trigger' "
+                "AND l.lanname = 'plpgsql' AND NOT p.prosecdef "
+                "AND p.proconfig = ARRAY['search_path=pg_catalog']::text[] "
+                "AND btrim(p.prosrc, :trim_chars) = :expected_body"
+            ),
+            {"expected_body": _EXPECTED_AUDIT_FUNCTION_BODY, "trim_chars": " \t\r\n"},
+        )
+    )
+    triggers = frozenset(
+        (row[0], row[1])
+        for row in connection.execute(
+            text(
+                "SELECT c.relname, t.tgname "
+                "FROM pg_catalog.pg_trigger t "
+                "JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "JOIN pg_catalog.pg_proc p ON p.oid = t.tgfoid "
+                "JOIN pg_catalog.pg_namespace pn ON pn.oid = p.pronamespace "
+                "WHERE n.nspname = 'public' "
+                "AND c.relname = 'bitacora_eventos' "
+                "AND t.tgname = 'trg_bitacora_eventos_immutable' "
+                "AND NOT t.tgisinternal AND t.tgtype = 26 AND t.tgenabled = 'O' "
+                "AND t.tgqual IS NULL "
+                "AND pn.nspname = 'public' AND p.proname = 'prevent_bitacora_mutation' "
+                "AND pg_catalog.pg_get_function_identity_arguments(p.oid) = '' "
+                "AND pg_catalog.pg_get_function_result(p.oid) = 'trigger' "
+                "AND p.prolang = (SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql') "
+                "AND NOT p.prosecdef "
+                "AND p.proconfig = ARRAY['search_path=pg_catalog']::text[] "
+                "AND btrim(p.prosrc, :trim_chars) = :expected_body"
+            ),
+            {"expected_body": _EXPECTED_AUDIT_FUNCTION_BODY, "trim_chars": " \t\r\n"},
+        )
+    )
+    return DatabaseInventory(tables, sequences, indexes, constraints, functions, triggers)
 
 
 def export_snapshot(connection: Connection) -> str:
@@ -350,6 +405,17 @@ def validate_restore_toc(
                 raise BackupGenerationError(UNEXPECTED_TOC_OBJECT, "Secuencia TOC inesperada")
         if object_type == "INDEX" and name not in inventory.indexes:
             raise BackupGenerationError(UNEXPECTED_TOC_OBJECT, "Indice TOC inesperado")
+        if object_type == "FUNCTION":
+            if name != "prevent_bitacora_mutation()" or name not in inventory.functions:
+                raise BackupGenerationError(UNEXPECTED_TOC_OBJECT, "Funcion TOC inesperada")
+        if object_type == "TRIGGER":
+            if (
+                len(fields) < 3
+                or (name, fields[2]) not in inventory.triggers
+                or name != "bitacora_eventos"
+                or fields[2] != "trg_bitacora_eventos_immutable"
+            ):
+                raise BackupGenerationError(UNEXPECTED_TOC_OBJECT, "Trigger TOC inesperado")
         if object_type in {"CONSTRAINT", "FK CONSTRAINT"}:
             if len(fields) < 3 or (name, fields[2]) not in inventory.constraints:
                 raise BackupGenerationError(UNEXPECTED_TOC_OBJECT, "Constraint TOC inesperado")

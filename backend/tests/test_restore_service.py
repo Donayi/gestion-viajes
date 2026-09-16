@@ -44,6 +44,8 @@ VALID_TOC = "\n".join(
         "7; 1259 4 INDEX public ix_viajes owner",
         "8; 2606 5 CONSTRAINT public viajes viajes_pkey owner",
         "9; 2606 6 FK CONSTRAINT public viajes viajes_cliente_fkey owner",
+        "10; 1255 7 FUNCTION public prevent_bitacora_mutation() owner",
+        "11; 2620 8 TRIGGER public bitacora_eventos trg_bitacora_eventos_immutable owner",
     ]
 ) + "\n"
 
@@ -55,6 +57,10 @@ def _inventory() -> DatabaseInventory:
         indexes=frozenset({"ix_viajes"}),
         constraints=frozenset(
             {("viajes", "viajes_pkey"), ("viajes", "viajes_cliente_fkey")}
+        ),
+        functions=frozenset({"prevent_bitacora_mutation()"}),
+        triggers=frozenset(
+            {("bitacora_eventos", "trg_bitacora_eventos_immutable")}
         ),
     )
 
@@ -267,10 +273,24 @@ def test_pg_restore_list_invocation_is_exact_and_non_destructive(
     )
 
 
-def test_accepts_valid_real_toc(valid_package, tmp_path):
+def test_accepts_valid_mocked_toc_with_audit_objects(valid_package, tmp_path):
     with _prepare(valid_package, tmp_path) as prepared:
         assert prepared.toc_entries[0] == "4; 2615 2200 SCHEMA - public owner"
-        assert len(prepared.toc_entries) == 11
+        assert len(prepared.toc_entries) == 13
+        assert "10; 1255 7 FUNCTION public prevent_bitacora_mutation() owner" in prepared.toc_entries
+        assert "11; 2620 8 TRIGGER public bitacora_eventos trg_bitacora_eventos_immutable owner" in prepared.toc_entries
+
+
+def test_restore_audit_objects_require_authorized_inventory(valid_package, tmp_path):
+    inventory = DatabaseInventory(
+        tables=frozenset({"viajes"}), sequences=frozenset({"viajes_id_seq"}),
+        indexes=frozenset({"ix_viajes"}),
+        constraints=frozenset({("viajes", "viajes_pkey"), ("viajes", "viajes_cliente_fkey")}),
+    )
+    with pytest.raises(service.RestorePreparationError) as captured:
+        with _prepare(valid_package, tmp_path, inventory=inventory):
+            pass
+    assert captured.value.code == service.TOC_VALIDATION_FAILED
 
 
 @pytest.mark.parametrize(
@@ -281,6 +301,35 @@ def test_accepts_valid_real_toc(valid_package, tmp_path):
     ],
 )
 def test_rejects_toc_outside_public(
+    valid_package,
+    tmp_path,
+    monkeypatch,
+    unexpected_line,
+):
+    monkeypatch.setattr(
+        service.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=VALID_TOC + unexpected_line + "\n",
+            stderr="",
+        ),
+    )
+    with pytest.raises(service.RestorePreparationError) as captured:
+        with _prepare(valid_package, tmp_path):
+            pass
+    assert captured.value.code == service.TOC_VALIDATION_FAILED
+
+
+@pytest.mark.parametrize(
+    "unexpected_line",
+    [
+        "20; 1255 20 FUNCTION public funcion_arbitraria() owner",
+        "20; 2620 20 TRIGGER public bitacora_eventos trigger_arbitrario owner",
+        "20; 2620 20 TRIGGER public viajes trg_bitacora_eventos_immutable owner",
+    ],
+)
+def test_restore_rejects_unapproved_functions_and_triggers(
     valid_package,
     tmp_path,
     monkeypatch,
@@ -333,7 +382,7 @@ def test_tolerates_only_approved_non_semantic_toc_differences(
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=actual, stderr=""),
     )
     with _prepare(valid_package, tmp_path) as prepared:
-        assert len(prepared.toc_entries) == 11
+        assert len(prepared.toc_entries) == 13
 
 
 def test_cleans_staging_when_subprocess_fails(valid_package, tmp_path, monkeypatch):
