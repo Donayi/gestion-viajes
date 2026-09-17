@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     web_push_subject: str = "mailto:admin@dafreqlogistica.com"
     audit_enabled: bool = False
     audit_ip_hmac_key: SecretStr | None = None
-    audit_ip_hash_version: int = Field(default=1, gt=0)
+    audit_ip_hash_version: int = Field(default=1, gt=0, le=32767)
     audit_trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    audit_user_agent_max_length: int = Field(default=300, gt=0)
+    audit_user_agent_max_length: int = Field(default=300, gt=0, le=300)
     audit_retention_months: int = Field(default=24, gt=0)
     audit_max_json_bytes: int = Field(default=8192, gt=0, le=8192)
     backup_enabled: bool = True

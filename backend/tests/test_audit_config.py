@@ -196,3 +196,25 @@ def test_invalid_trusted_proxies_from_environment_are_rejected(monkeypatch):
 def test_existing_production_secret_validation_is_preserved():
     with pytest.raises(ValidationError, match="SECRET_KEY insegura para producción"):
         make_settings(app_env="production", secret_key="change-me-in-production")
+
+
+@pytest.mark.parametrize("value", [1, 32767])
+def test_ip_hash_version_accepts_smallint_bounds(value):
+    assert make_settings(audit_ip_hash_version=value).audit_ip_hash_version == value
+
+
+@pytest.mark.parametrize("value", [0, 32768])
+def test_ip_hash_version_rejects_outside_smallint_bounds(value):
+    with pytest.raises(ValidationError):
+        make_settings(audit_ip_hash_version=value)
+
+
+@pytest.mark.parametrize("value", [1, 300])
+def test_user_agent_config_accepts_contract_bounds(value):
+    assert make_settings(audit_user_agent_max_length=value).audit_user_agent_max_length == value
+
+
+@pytest.mark.parametrize("value", [0, 301])
+def test_user_agent_config_rejects_outside_contract_bounds(value):
+    with pytest.raises(ValidationError):
+        make_settings(audit_user_agent_max_length=value)

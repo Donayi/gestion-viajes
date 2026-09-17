@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -8,6 +8,7 @@ from app.crud.crud_usuarios import get_user_with_role_and_operador
 from app.db.deps import get_db
 from app.models.models import Operador, Usuario
 from app.core.security import JWTError, decode_access_token
+from app.services.audit_context import bind_authenticated_actor, get_audit_state
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -35,6 +36,7 @@ def is_mantenimiento_user(user: Usuario) -> bool:
 
 
 def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> Usuario:
@@ -63,6 +65,15 @@ def get_current_user(
             detail="El usuario está inactivo",
         )
 
+    state = get_audit_state(request.scope)
+    if state is not None and state.enabled:
+        bind_authenticated_actor(
+            state,
+            usuario_id=user.id_usuario,
+            username=user.username,
+            nombre=f"{user.nombre} {user.apellido}".strip(),
+            rol=user.rol.nombre if user.rol else "",
+        )
     return user
 
 
