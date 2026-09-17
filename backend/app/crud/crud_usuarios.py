@@ -1,4 +1,5 @@
 from pydantic import SecretStr
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 from app.models.models import Usuario, Rol
 from app.core.security import get_password_hash, verify_password
@@ -12,6 +13,27 @@ def hash_password(password: str | SecretStr) -> str:
 
 def get_user_by_id(db: Session, user_id: int) -> Usuario | None:
     return db.query(Usuario).filter(Usuario.id_usuario == user_id).first()
+
+
+def get_user_by_id_for_update(db: Session, user_id: int) -> Usuario | None:
+    return (
+        db.query(Usuario).populate_existing().filter(Usuario.id_usuario == user_id)
+        .with_for_update(of=Usuario).first()
+    )
+
+
+def get_user_referencing_constraints(db: Session) -> frozenset[tuple[str, str, str]]:
+    """Exact catalog identities of single-column FKs to public.usuarios.id_usuario."""
+    rows = db.execute(text(
+        "SELECT n.nspname, r.relname, c.conname FROM pg_catalog.pg_constraint c "
+        "JOIN pg_catalog.pg_class r ON r.oid = c.conrelid "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace "
+        "JOIN pg_catalog.pg_attribute a ON a.attrelid = c.confrelid "
+        "AND a.attnum = c.confkey[1] "
+        "WHERE c.contype = 'f' AND c.confrelid = 'public.usuarios'::regclass "
+        "AND cardinality(c.confkey) = 1 AND a.attname = 'id_usuario'"
+    ))
+    return frozenset(tuple(row) for row in rows)
 
 
 def get_user_by_username(db: Session, username: str) -> Usuario | None:
@@ -132,8 +154,7 @@ def create_user(db: Session, user_in: UserCreate) -> Usuario:
         id_rol=user_in.id_rol,
     )
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    db.flush()
     return db_user
 
 
@@ -157,18 +178,16 @@ def update_user_admin(db: Session, db_user: Usuario, user_in: UserAdminUpdate) -
     for field, value in update_data.items():
         setattr(db_user, field, value)
 
-    db.commit()
-    db.refresh(db_user)
+    db.flush()
     return db_user
 
 
 def update_user_password(db: Session, db_user: Usuario, password_in: UserPasswordUpdate) -> Usuario:
     db_user.password_hash = hash_password(password_in.new_password)
-    db.commit()
-    db.refresh(db_user)
+    db.flush()
     return db_user
 
 
 def delete_user(db: Session, db_user: Usuario) -> None:
     db.delete(db_user)
-    db.commit()
+    db.flush()
